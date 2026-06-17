@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+openai-whisper
+TTS
+torch
+torchaudio
+soundfile
+librosa
+scipy
+numpy
+google-generativeai
+redis
+confluent-kafka
+sqlalchemy
+psycopg2-binary
+python-multipart
+python-dotenv

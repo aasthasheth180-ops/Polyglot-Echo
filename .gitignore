@@ -1,0 +1,9 @@
+# D:\polyglot-echo\.gitignore
+.env
+venv310/
+__pycache__/
+*.pyc
+pipeline_metrics.csv
+benchmark_results.json
+*.wav
+*.mp3

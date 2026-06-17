@@ -1,0 +1,34 @@
+# Virtual environments — NEVER copy these, they're huge
+venv310/
+venv/
+.venv/
+env/
+
+# Audio files — mount these as volumes instead
+audio/*.wav
+audio/*.mp3
+audio/*.mp4
+
+# Model caches — re-downloaded inside container
+D:/whisper_cache/
+D:/tts_cache/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+*.code-workspace
+
+# Logs
+*.log
+logs/
+
+# Test outputs
+*.json
+benchmark_results.json
