@@ -1,8 +1,13 @@
 # backend/pipeline.py
+import io
+import wave
+import struct
 import os
 import time
 import uuid
 from dotenv import load_dotenv
+
+# Load environment variables
 load_dotenv()
 
 from backend.ai_client import transcribe_audio, synthesize_speech, check_colab_health
@@ -11,6 +16,41 @@ from backend.cache import get_cached_audio, set_cached_audio
 from pipeline.kafka_producer import emit_event, flush
 
 AASTHA_REF_TEXT = "Hey, how have you been lately? It feels like it has been forever."
+
+def trim_audio_for_whisper(wav_bytes: bytes, max_seconds: int = 30) -> bytes:
+    """
+    Trim audio to max 30 seconds before sending to Whisper.
+    Prevents hallucination loops on long recordings.
+    """
+    try:
+        buf = io.BytesIO(wav_bytes)
+        with wave.open(buf, 'rb') as w:
+            framerate   = w.getframerate()
+            max_frames  = max_seconds * framerate
+            total_frames = w.getnframes()
+
+            if total_frames <= max_frames:
+                return wav_bytes  # already short enough
+
+            # Read only first max_seconds
+            w.rewind()
+            frames = w.readframes(max_frames)
+            params = w.getparams()
+
+        # Write trimmed audio to new buffer
+        out = io.BytesIO()
+        with wave.open(out, 'wb') as w_out:
+            w_out.setparams(params)
+            w_out.writeframes(frames)
+        out.seek(0)
+        trimmed = out.read()
+        print(f"[Pipeline] Audio trimmed: {total_frames/framerate:.1f}s → {max_seconds}s")
+        return trimmed
+
+    except Exception as e:
+        print(f"[Pipeline] Trim failed ({e}) — using original")
+        return wav_bytes
+
 
 def process_audio_loop(
     wav_bytes: bytes,
@@ -22,6 +62,9 @@ def process_audio_loop(
     """
     Full pipeline on laptop — calls Colab for heavy AI work.
     """
+    # Safeguard input chunk length before processing
+    wav_bytes = trim_audio_for_whisper(wav_bytes, max_seconds=30)
+
     if session_id is None:
         session_id = str(uuid.uuid4())
 
