@@ -13,55 +13,26 @@ The system seamlessly switches between processing static full-file voice uploads
 
 The pipeline is split into a lightweight local orchestration hub (Laptop) and a high-performance cloud acceleration layer (Google Colab GPU Nodes) connected via high-speed, secure reverse-proxy tunnels.
 
-
-```
-
-[ Frontend Client ] ──(WebSocket / HTTP)──> [ FastAPI Gateway ]
-│
-┌──────────────────────────────────┴──────────────────────────────────┐
-▼ (Streaming Path)                                                    ▼ (Batch Path)
-[ 100ms Float32 Chunk Queue ]                                             [ 30s Rigid Audio Trimmer ]
-│                                                                     │
-▼                                                                     ▼
-[ Audio Matrix DSP Filters ]                                              [ Redis Layer Cache Check ]
-(80Hz High-Pass / 6kHz De-esser)                                                   │ (Hit -> Returns Bytes)
-│                                                                     │
-▼                                                                     ▼
-[ Custom Noise Gate VAD ]                                                 [ Colab Whisper Engine ]
-│                                                                     │
-└──────────────────────────────────┬──────────────────────────────────┘
-│
-▼
-[ Gemini 2.5 Flash LLM ]
-(Sliding-Window Memory Matrix)
-│
-▼
-[ Colab F5-TTS Engine ]
-│
-▼
-[ Apache Kafka Event Bus ]
-(Real-Time Ingestion -> PostgreSQL)
-
-```
+https://notebooklm.google.com/notebook/21a5741e-a096-4b98-a094-77fe54296b4a/artifact/fb1287bd-a1dd-42ae-b9e9-b39688bf398e?utm_source=nlm_web_share&utm_medium=google_oo&utm_campaign=art_share_2&utm_content=&utm_smc=nlm_web_share_google_oo_art_share_2_
 
 ### ⚡ Key Architectural Enhancements
-* **Full-Duplex Async Streaming:** Audio is transferred from the browser in 100ms frames using raw binary WebSockets, eliminating the overhead of standard file compilation.
-* **Edge Audio Preprocessing (DSP Matrix):** Applies an 80Hz High-Pass Butterworth filter to remove low-frequency microphone rumble and a 6000Hz IIR Notch filter to eliminate sibilance/hiss prior to transcription.
-* **VAD Noise Gate:** Built-in Root-Mean-Square (RMS) volume gate set aggressively (`0.025`) alongside text-matching regularizers to discard Whisper static hallucinations (such as ghost "Thank you" loops).
-* **Sliding-Window Memory Vault:** Implements an internal memory manager tracking the last $k=5$ conversation turns natively inside the context prompt to prevent token bloat while maintaining strict multi-turn conversational accuracy.
-* **Decoupled Metric Tracking:** Emits lifecycle tracking event payloads down to an Apache Kafka cluster to record sub-component processing latencies without blocking the active voice path.
+Full-Duplex Async Streaming: Audio is transferred from the browser in 100ms frames using raw binary WebSockets, eliminating the overhead of standard file compilation.
+Edge Audio Preprocessing (DSP Matrix): Applies an 80Hz High-Pass Butterworth filter to remove low-frequency microphone rumble and a 6000Hz IIR Notch filter to eliminate sibilance/hiss prior to transcription.
+VAD Noise Gate: Built-in Root-Mean-Square (RMS) volume gate set aggressively (`0.025`) alongside text-matching regularizers to discard Whisper static hallucinations (such as ghost "Thank you" loops).
+Sliding-Window Memory Vault: Implements an internal memory manager tracking the last k=5 conversation turns natively inside the context prompt to prevent token bloat while maintaining strict multi-turn conversational accuracy.
+Decoupled Metric Tracking: Emits lifecycle tracking event payloads down to an Apache Kafka cluster to record sub-component processing latencies without blocking the active voice path.
 
 ---
 
 ## 🛠️ Tech Stack & Infrastructure
 
-* **Backend Framework:** FastAPI (Python 3.10) with Asynchronous Coroutines (`asyncio`).
-* **Signal Processing:** NumPy, SciPy (Signal Processing Sub-module).
-* **LLM Engine:** Google GenAI SDK (`gemini-2.5-flash`).
-* **Cloud AI Inference Tunnels:** OpenAI Whisper (ASR), F5-TTS (Voice Synthesis) via remote GPU worker threads.
-* **Event Streaming:** Apache Kafka.
-* **Caching & Analytics:** Redis (Audio Payload Cache), PostgreSQL (Pipeline Turn Telemetry).
-* **Containerization:** Docker & Docker Compose.
+Backend Framework: FastAPI (Python 3.10) with Asynchronous Coroutines (`asyncio`).
+Signal Processing: NumPy, SciPy (Signal Processing Sub-module).
+LLM Engine: Google GenAI SDK (`gemini-2.5-flash`).
+Cloud AI Inference Tunnels: OpenAI Whisper (ASR), F5-TTS (Voice Synthesis) via remote GPU worker threads.
+Event Streaming: Apache Kafka.
+Caching & Analytics: Redis (Audio Payload Cache), PostgreSQL (Pipeline Turn Telemetry).
+Containerization: Docker & Docker Compose.
 
 ---
 
@@ -156,6 +127,4 @@ Navigate to `http://localhost:8080/stream_test.html` in your browser, select you
 | **Total System Turn (TTFA)** | **End-to-End Dynamic Stream** | **< 1.0 Second** |
 
 ```
-
----
 
