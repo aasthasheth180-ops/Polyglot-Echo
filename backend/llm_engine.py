@@ -80,6 +80,38 @@ class LLMEngine:
         print(f"[LLM Memory Node] ({target_lang}): '{response_text[:50]}...' | {latency_ms}ms")
         return {"text": response_text, "latency_ms": latency_ms}
 
+    async def generate_stream(self, user_text: str, target_lang: str, session_id: str = "default"):
+        """
+        Asynchronous generator streaming back text tokens from Gemini 
+        while preserving sliding memory buffers.
+        """
+        lang_name = LANGUAGE_NAMES.get(target_lang, "English")
+        history_buffer = self._get_history_buffer(session_id, k=5)
+        
+        prompt = SYSTEM_TEMPLATE.format(
+            target_language=lang_name,
+            history=history_buffer,
+            input=user_text
+        )
+
+        # Uses the streaming engine endpoint for low-latency generation
+        response_stream = self.client.models.generate_content_stream(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
+
+        full_response_text = ""
+        for chunk in response_stream:
+            if chunk.text:
+                full_response_text += chunk.text
+                yield chunk.text
+
+        # Append the complete structured memory track once the stream ends
+        self._memories[session_id].append({
+            "user": user_text,
+            "assistant": full_response_text.strip()
+        })
+
     def clear_session(self, session_id: str):
         if session_id in self._memories:
             del self._memories[session_id]

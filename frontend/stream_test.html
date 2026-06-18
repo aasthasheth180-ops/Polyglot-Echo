@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polyglot Echo — Live Stream</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: #0F1117;
+            color: #E2E8F0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .header {
+            padding: 16px 24px;
+            border-bottom: 1px solid #2D3748;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header h1 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #E2E8F0;
+        }
+
+        .status-pill {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #1A202C;
+            border-radius: 20px;
+            padding: 6px 14px;
+            font-size: 0.8rem;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #FC8181;
+            transition: background 0.3s;
+        }
+
+        .dot.connected {
+            background: #48BB78;
+        }
+
+        .dot.recording {
+            background: #F6AD55;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.3;
+            }
+        }
+
+        .controls {
+            padding: 12px 24px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            border-bottom: 1px solid #2D3748;
+        }
+
+        select {
+            background: #2D3748;
+            color: #E2E8F0;
+            border: 1px solid #4A5568;
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+
+        .chat-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .bubble {
+            max-width: 70%;
+            padding: 10px 14px;
+            border-radius: 16px;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .bubble.user {
+            background: #2D3748;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+
+        .bubble.ai {
+            background: #1A365D;
+            color: #BEE3F8;
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+
+        .bubble .label {
+            font-size: 0.7rem;
+            color: #718096;
+            margin-bottom: 4px;
+        }
+
+        .bubble .latency {
+            font-size: 0.7rem;
+            color: #4A5568;
+            margin-top: 6px;
+        }
+
+        .mic-area {
+            padding: 20px 24px;
+            border-top: 1px solid #2D3748;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .mic-btn {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            border: none;
+            background: #2D3748;
+            color: #E2E8F0;
+            font-size: 1.8rem;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .mic-btn:active,
+        .mic-btn.recording {
+            background: #E53E3E;
+            transform: scale(1.08);
+            box-shadow: 0 0 0 8px rgba(229, 62, 62, 0.2);
+        }
+
+        .mic-hint {
+            font-size: 0.8rem;
+            color: #4A5568;
+        }
+
+        .waveform {
+            width: 200px;
+            height: 40px;
+        }
+
+        canvas {
+            width: 200px;
+            height: 40px;
+            border-radius: 4px;
+            background: #1A202C;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        <h1>🎙️ Polyglot Echo</h1>
+        <div class="status-pill">
+            <div class="dot" id="statusDot"></div>
+            <span id="statusText">Disconnected</span>
+        </div>
+    </div>
+
+    <div class="controls">
+        <select id="langSelect">
+            <option value="en">🇺🇸 English</option>
+            <option value="hi">🇮🇳 Hindi</option>
+            <option value="es">🇪🇸 Spanish</option>
+            <option value="fr">🇫🇷 French</option>
+            <option value="de">🇩🇪 German</option>
+            <option value="pt">🇵🇹 Portuguese</option>
+            <option value="ru">🇷🇺 Russian</option>
+            <option value="ar">🇸🇦 Arabic</option>
+            <option value="zh">🇨🇳 Chinese</option>
+            <option value="ja">🇯🇵 Japanese</option>
+        </select>
+
+        <select id="profileSelect">
+            <option value="aastha">🧑 Aastha (Tuned)</option>
+            <option value="guest">👤 Guest (Auto)</option>
+        </select>
+
+        <button onclick="connectWS()" id="connectBtn" style="background:#2D3748;color:#E2E8F0;border:1px solid #4A5568;
+                 border-radius:8px;padding:6px 14px;cursor:pointer;font-size:0.85rem;">
+            Connect
+        </button>
+    </div>
+
+    <div class="chat-area" id="chatArea"></div>
+
+    <div class="mic-area">
+        <canvas id="waveCanvas" width="200" height="40"></canvas>
+        <button class="mic-btn" id="micBtn" onmousedown="startRecording()" onmouseup="stopRecording()"
+            ontouchstart="startRecording()" ontouchend="stopRecording()">
+            🎤
+        </button>
+        <span class="mic-hint">Hold to speak — release to send</span>
+    </div>
+
+    <script>
+        // ── State ──────────────────────────────────────────────────
+        let ws = null;
+        let mediaRecorder = null;
+        let audioCtx = null;
+        let analyser = null;
+        let animFrame = null;
+        let pendingChunks = [];
+        let isRecording = false;
+        let sessionId = crypto.randomUUID();
+        let audioQueue = [];    // WAV chunks waiting to play
+        let isPlaying = false;
+
+        const chatArea = document.getElementById('chatArea');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const micBtn = document.getElementById('micBtn');
+        const canvas = document.getElementById('waveCanvas');
+        const canvasCtx = canvas.getContext('2d');
+
+        // ── WebSocket ──────────────────────────────────────────────
+        function connectWS() {
+            const lang = document.getElementById('langSelect').value;
+            const profile = document.getElementById('profileSelect').value;
+            const url = `ws://localhost:8000/ws/stream-audio?target_lang=${lang}&speaker_profile=${profile}&session_id=${sessionId}`;
+
+            ws = new WebSocket(url);
+            ws.binaryType = 'arraybuffer';
+
+            ws.onopen = () => {
+                statusDot.className = 'dot connected';
+                statusText.textContent = 'Connected';
+                document.getElementById('connectBtn').textContent = 'Connected ✓';
+                console.log('[WS] Connected');
+            };
+
+            ws.onclose = () => {
+                statusDot.className = 'dot';
+                statusText.textContent = 'Disconnected';
+                document.getElementById('connectBtn').textContent = 'Reconnect';
+                console.log('[WS] Closed');
+            };
+
+            ws.onerror = (e) => {
+                console.error('[WS] Error:', e);
+                statusText.textContent = 'Error — check backend';
+            };
+
+            ws.onmessage = handleMessage;
+        }
+
+        // ── Message handler ────────────────────────────────────────
+        let currentAIBubble = null;
+        let currentAIText = '';
+        let expectingAudio = false;
+        let pendingAudioSize = 0;
+
+        function handleMessage(event) {
+            // Binary = audio WAV chunk
+            if (event.data instanceof ArrayBuffer) {
+                audioQueue.push(event.data);
+                playNextChunk();
+                return;
+            }
+
+            // JSON = metadata / text
+            const msg = JSON.parse(event.data);
+
+            if (msg.type === 'transcript') {
+                addBubble('user', `🎤 ${msg.text}`, `Detected: ${msg.language} | ${msg.latency_ms}ms`);
+                currentAIBubble = null;
+                currentAIText = '';
+            }
+
+            else if (msg.type === 'llm_chunk') {
+                currentAIText += msg.text + ' ';
+                if (!currentAIBubble) {
+                    currentAIBubble = addBubble('ai', currentAIText);
+                } else {
+                    const p = currentAIBubble.querySelector('.text');
+                    if (p) p.textContent = currentAIText;
+                }
+            }
+
+            else if (msg.type === 'audio_chunk_start') {
+                console.log(`[WS] Incoming audio: ${msg.size_bytes}B | TTS ${msg.tts_ms}ms`);
+            }
+
+            else if (msg.type === 'response_done') {
+                if (currentAIBubble) {
+                    const lat = currentAIBubble.querySelector('.latency');
+                    if (lat) lat.textContent = 'Response complete';
+                }
+            }
+
+            else if (msg.type === 'stream_end') {
+                console.log('[WS] Stream ended cleanly');
+            }
+        }
+
+        // ── Audio playback queue ───────────────────────────────────
+        async function playNextChunk() {
+            if (isPlaying || audioQueue.length === 0) return;
+            isPlaying = true;
+
+            const chunk = audioQueue.shift();
+            try {
+                if (!audioCtx) audioCtx = new AudioContext({ sampleRate: 24000 });
+                const decoded = await audioCtx.decodeAudioData(chunk.slice(0));
+                const source = audioCtx.createBufferSource();
+                source.buffer = decoded;
+                source.connect(audioCtx.destination);
+                source.onended = () => {
+                    isPlaying = false;
+                    playNextChunk();
+                };
+                source.start(0);
+            } catch (e) {
+                console.warn('[Audio] Decode error:', e);
+                isPlaying = false;
+                playNextChunk();
+            }
+        }
+
+        // ── Recording ──────────────────────────────────────────────
+        async function startRecording() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                alert('Connect to backend first');
+                return;
+            }
+            if (isRecording) return;
+
+            isRecording = true;
+            micBtn.classList.add('recording');
+            statusDot.className = 'dot recording';
+            statusText.textContent = 'Recording...';
+
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    sampleRate: 16000,
+                    channelCount: 1,
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                }
+            });
+
+            // Waveform visualizer
+            if (!audioCtx) audioCtx = new AudioContext({ sampleRate: 16000 });
+            const source = audioCtx.createMediaStreamSource(stream);
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
+            drawWaveform();
+
+            mediaRecorder = new MediaRecorder(stream, {
+                mimeType: 'audio/webm;codecs=opus',
+                audioBitsPerSecond: 16000
+            });
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0 && ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(event.data);
+                }
+            };
+
+            // Send every 100ms
+            mediaRecorder.start(100);
+            console.log('[Mic] Recording started');
+        }
+
+        function stopRecording() {
+            if (!isRecording) return;
+            isRecording = false;
+
+            micBtn.classList.remove('recording');
+            statusDot.className = 'dot connected';
+            statusText.textContent = 'Processing...';
+
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(t => t.stop());
+            }
+
+            cancelAnimationFrame(animFrame);
+            clearCanvas();
+
+            console.log('[Mic] Recording stopped — waiting for response');
+        }
+
+        // ── Waveform canvas ────────────────────────────────────────
+        function drawWaveform() {
+            animFrame = requestAnimationFrame(drawWaveform);
+            if (!analyser) return;
+
+            const data = new Uint8Array(analyser.frequencyBinCount);
+            analyser.getByteTimeDomainData(data);
+
+            canvasCtx.fillStyle = '#1A202C';
+            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+            canvasCtx.lineWidth = 2;
+            canvasCtx.strokeStyle = '#48BB78';
+            canvasCtx.beginPath();
+
+            const sliceW = canvas.width / data.length;
+            let x = 0;
+            for (let i = 0; i < data.length; i++) {
+                const v = data[i] / 128.0;
+                const y = (v * canvas.height) / 2;
+                i === 0 ? canvasCtx.moveTo(x, y) : canvasCtx.lineTo(x, y);
+                x += sliceW;
+            }
+            canvasCtx.lineTo(canvas.width, canvas.height / 2);
+            canvasCtx.stroke();
+        }
+
+        function clearCanvas() {
+            canvasCtx.fillStyle = '#1A202C';
+            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // ── Chat bubbles ───────────────────────────────────────────
+        function addBubble(role, text, latencyText = '') {
+            const div = document.createElement('div');
+            div.className = `bubble ${role}`;
+            div.innerHTML = `
+    <div class="label">${role === 'user' ? 'You' : '🔊 Echo'}</div>
+    <div class="text">${text}</div>
+    ${latencyText ? `<div class="latency">${latencyText}</div>` : ''}
+  `;
+            chatArea.appendChild(div);
+            chatArea.scrollTop = chatArea.scrollHeight;
+            return div;
+        }
+
+        // Auto-connect on load
+        window.onload = () => {
+            clearCanvas();
+            // Uncomment to auto-connect:
+            // connectWS();
+        };
+    </script>
+</body>
+
+</html>
