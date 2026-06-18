@@ -13,7 +13,7 @@ The system seamlessly switches between processing static full-file voice uploads
 
 The pipeline is split into a lightweight local orchestration hub (Laptop) and a high-performance cloud acceleration layer (Google Colab GPU Nodes) connected via high-speed, secure reverse-proxy tunnels.
 
-https://notebooklm.google.com/notebook/21a5741e-a096-4b98-a094-77fe54296b4a/artifact/fb1287bd-a1dd-42ae-b9e9-b39688bf398e?utm_source=nlm_web_share&utm_medium=google_oo&utm_campaign=art_share_2&utm_content=&utm_smc=nlm_web_share_google_oo_art_share_2_
+
 
 ### ⚡ Key Architectural Enhancements
 Full-Duplex Async Streaming: Audio is transferred from the browser in 100ms frames using raw binary WebSockets, eliminating the overhead of standard file compilation.
