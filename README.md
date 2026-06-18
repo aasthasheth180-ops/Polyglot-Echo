@@ -1,6 +1,10 @@
 Polyglot Echo: Real-Time Multilingual Voice Cloner & Telemetry Pipeline
 Polyglot Echo is an end-to-end, low-latency conversational AI pipeline designed to transcribe user speech, generate context-aware LLM translations, and instantly clone the speaker's voice to read back the response in multiple target languages.
 
+![Uploading image.png…]()
+
+
+
 Beyond core ML modeling, this project is built with a heavy emphasis on Data Engineering production standards, featuring a robust event-driven telemetry logging infrastructure, asynchronous distributed metrics streaming, and an in-memory caching layer to drop pipeline processing bottlenecks.
 
 Architecture & Core Components
