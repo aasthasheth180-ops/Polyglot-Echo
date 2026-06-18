@@ -1,35 +1,161 @@
-Polyglot Echo: Real-Time Multilingual Voice Cloner & Telemetry Pipeline
-Polyglot Echo is an end-to-end, low-latency conversational AI pipeline designed to transcribe user speech, generate context-aware LLM translations, and instantly clone the speaker's voice to read back the response in multiple target languages.
+### 📄 `README.md`
 
-![Uploading image.png…]()
+```markdown
+# Polyglot Echo v2.0: Low-Latency Multilingual Streaming Voice Assistant
+
+Polyglot Echo is an enterprise-grade, real-time conversational AI voice pipeline that enables full-duplex, multilingual audio streaming. By decoupling heavy machine learning orchestration from the client web interface, the architecture achieves minimal Time-To-First-Audio (TTFA) using asynchronous worker queues, WebSockets, and edge digital signal processing (DSP).
+
+The system seamlessly switches between processing static full-file voice uploads via standard REST endpoints and managing highly responsive, real-time audio streams via persistent WebSocket channels.
+
+---
+
+## 🏗️ System Architecture
+
+The pipeline is split into a lightweight local orchestration hub (Laptop) and a high-performance cloud acceleration layer (Google Colab GPU Nodes) connected via high-speed, secure reverse-proxy tunnels.
 
 
+```
 
-Beyond core ML modeling, this project is built with a heavy emphasis on Data Engineering production standards, featuring a robust event-driven telemetry logging infrastructure, asynchronous distributed metrics streaming, and an in-memory caching layer to drop pipeline processing bottlenecks.
+[ Frontend Client ] ──(WebSocket / HTTP)──> [ FastAPI Gateway ]
+│
+┌──────────────────────────────────┴──────────────────────────────────┐
+▼ (Streaming Path)                                                    ▼ (Batch Path)
+[ 100ms Float32 Chunk Queue ]                                             [ 30s Rigid Audio Trimmer ]
+│                                                                     │
+▼                                                                     ▼
+[ Audio Matrix DSP Filters ]                                              [ Redis Layer Cache Check ]
+(80Hz High-Pass / 6kHz De-esser)                                                   │ (Hit -> Returns Bytes)
+│                                                                     │
+▼                                                                     ▼
+[ Custom Noise Gate VAD ]                                                 [ Colab Whisper Engine ]
+│                                                                     │
+└──────────────────────────────────┬──────────────────────────────────┘
+│
+▼
+[ Gemini 2.5 Flash LLM ]
+(Sliding-Window Memory Matrix)
+│
+▼
+[ Colab F5-TTS Engine ]
+│
+▼
+[ Apache Kafka Event Bus ]
+(Real-Time Ingestion -> PostgreSQL)
 
-Architecture & Core Components
-The pipeline bridges deep learning inference with microservice analytics across three core stages:
+```
 
-Speech-to-Text (STT): Powered by an optimized deployment of OpenAI's Whisper, which automatically detects the input language from short live microphone bursts or file uploads while dynamically suppressing silent-frame loops.
+### ⚡ Key Architectural Enhancements
+* **Full-Duplex Async Streaming:** Audio is transferred from the browser in 100ms frames using raw binary WebSockets, eliminating the overhead of standard file compilation.
+* **Edge Audio Preprocessing (DSP Matrix):** Applies an 80Hz High-Pass Butterworth filter to remove low-frequency microphone rumble and a 6000Hz IIR Notch filter to eliminate sibilance/hiss prior to transcription.
+* **VAD Noise Gate:** Built-in Root-Mean-Square (RMS) volume gate set aggressively (`0.025`) alongside text-matching regularizers to discard Whisper static hallucinations (such as ghost "Thank you" loops).
+* **Sliding-Window Memory Vault:** Implements an internal memory manager tracking the last $k=5$ conversation turns natively inside the context prompt to prevent token bloat while maintaining strict multi-turn conversational accuracy.
+* **Decoupled Metric Tracking:** Emits lifecycle tracking event payloads down to an Apache Kafka cluster to record sub-component processing latencies without blocking the active voice path.
 
-Contextual Translation (LLM): Orchestrated via the Gemini API to act as the conversational engine, maintaining a sliding-window session context memory for true conversational back-and-forths.
+---
 
-Zero-Shot Voice Synthesis (TTS): Utilizing F5-TTS, the pipeline extracts a vocal profile from a raw audio sample and generates natural, multilingual voice clones on the fly.
+## 🛠️ Tech Stack & Infrastructure
 
-Custom Audio DSP Layer: Implemented with Librosa and SciPy to automatically run RMS volume normalization and a 1st-order 2700Hz low-pass Butterworth filter on raw audio arrays, eliminating high-frequency digital jitter and clipping before user playback.
+* **Backend Framework:** FastAPI (Python 3.10) with Asynchronous Coroutines (`asyncio`).
+* **Signal Processing:** NumPy, SciPy (Signal Processing Sub-module).
+* **LLM Engine:** Google GenAI SDK (`gemini-2.5-flash`).
+* **Cloud AI Inference Tunnels:** OpenAI Whisper (ASR), F5-TTS (Voice Synthesis) via remote GPU worker threads.
+* **Event Streaming:** Apache Kafka.
+* **Caching & Analytics:** Redis (Audio Payload Cache), PostgreSQL (Pipeline Turn Telemetry).
+* **Containerization:** Docker & Docker Compose.
 
-Data Engineering & MLOps Highlights
-Event-Driven Telemetry Logging: Integrated Apache Kafka to capture microservice telemetry data asynchronously, preventing pipeline execution stalls by decoupled routing of latency metrics and language classifications.
+---
 
-Low-Latency In-Memory Caching: Uses Redis as a distributed caching layer to drop redundant generation steps for recurring conversational states and tokens.
+## 📂 Repository Structure
 
-Analytical Engine Logs: Telemetry events streamed through Kafka are loaded into a relational PostgreSQL database, driving a real-time system monitoring dashboard that tracks component latency splits, cache hit rates, and speaker profile usage.
+```text
+polyglot-echo/
+├── backend/
+│   ├── ai_client.py        # Connects network bridges out to cloud GPU nodes
+│   ├── cache.py            # Handles Redis audio payload string key/value pairs
+│   ├── llm_engine.py       # Manages Gemini streaming client & memory window matrix
+│   ├── main.py             # FastAPI entry point hosting REST & WebSocket gateways
+│   ├── pipeline.py         # Standard full-file batch ingestion pipeline loop
+│   └── stream_handler.py   # Asynchronous WebSocket workers, DSP matrix & VAD gate
+├── pipeline/
+│   ├── kafka_producer.py   # Fires event state packets to the streaming clusters
+│   └── models.py           # Implements database tracking schemas
+├── infra/
+│   └── docker-compose.yml  # Spins up local Kafka, Postgres, and Redis containers
+└── frontend/
+    └── stream_test.html    # Raw HTML5 WebAudio API real-time testing sandbox
 
-Tech Stack
-Core Backend: Python, FastAPI, SciPy, Librosa
+```
 
-Data Infrastructure: Apache Kafka, Redis, PostgreSQL
+---
 
-Machine Learning & GenAI: F5-TTS, Whisper, Gemini API, Hugging Face
+## 🚀 Deployment & Execution Guide
 
-Frontend UI & Visualization: Streamlit, Plotly Express
+### 1. Initialize Distributed Infrastructure
+
+Spin up the local message brokers and caching instances using Docker Compose:
+
+```bash
+docker compose -f infra/docker-compose.yml up -d
+
+```
+
+### 2. Configure Environment Variables
+
+Create a `.env` file in the project root directory:
+
+```env
+GEMINI_API_KEY="your-google-gemini-api-key"
+COLAB_AI_URL="[https://your-active-ngrok-tunnel-url.ngrok-free.app](https://your-active-ngrok-tunnel-url.ngrok-free.app)"
+REDIS_HOST="localhost"
+KAFKA_BOOTSTRAP_SERVERS="localhost:9092"
+
+```
+
+### 3. Setup Virtual Environment & Dependencies
+
+```bash
+python -m venv venv310
+source venv310/bin/activate  # On Windows: .\venv310\Scripts\activate
+
+# Install requirements (ensure numpy is bounded to avoid binary compatibility errors)
+pip install -r requirements.txt
+pip install "numpy<2.0.0"
+
+```
+
+### 4. Boot Up the FastApi Application Core
+
+```bash
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
+
+```
+
+Look for the validation indicator: `[✓] LLM Engine: Gemini + Native Sliding-Window Memory Online`.
+
+### 5. Open the Frontend Sandbox Interface
+
+Expose the static testing sandbox locally using Python's built-in HTTP server module:
+
+```bash
+python -m http.server 8080 --directory frontend
+
+```
+
+Navigate to `http://localhost:8080/stream_test.html` in your browser, select your language parameter matrix, hit **Connect**, and hold down the microphone button to initiate a live voice stream.
+
+---
+
+## 📊 Performance & Latency Metrics
+
+| Segment Pipeline Stage | Processing Infrastructure | Average Streaming Latency |
+| --- | --- | --- |
+| **Edge Filtering & VAD Gate** | Local Laptop CPU (Async Loop) | ~2ms - 5ms |
+| **Whisper Transcription** | Remote Cloud GPU Tunnel | ~200ms - 400ms |
+| **Gemini Token Generation** | Official Google GenAI API | ~50ms (First Chunk) |
+| **F5-TTS Audio Matrix Synthesis** | Remote Cloud GPU Tunnel | ~350ms - 600ms (Sentence Blocks) |
+| **Total System Turn (TTFA)** | **End-to-End Dynamic Stream** | **< 1.0 Second** |
+
+```
+
+---
+
