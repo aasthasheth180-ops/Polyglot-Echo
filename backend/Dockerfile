@@ -26,5 +26,4 @@ EXPOSE 8000
 
 # ── Launch production server via live Uvicorn bindings ────────
 # Ensure the shell form is explicitly defined using /bin/sh
-ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["uvicorn main:app --host 0.0.0.0 --port $PORT"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
