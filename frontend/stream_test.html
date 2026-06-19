@@ -332,13 +332,21 @@
         <div class="status-bar">
             <div class="status-indicator">
                 <div class="dot online" id="statusDot"></div>
-                <span id="statusText">Connected to Local Server</span>
+                <span id="statusText">Connecting to Production Server...</span>
             </div>
             <div id="sessionDisplay">Session: initializing...</div>
         </div>
     </div>
 
     <script>
+        // ── Configuration — change these when URLs change ─────────────
+        const CONFIG = {
+            // Your Railway backend URL (no trailing slash)
+            BACKEND_HTTP: 'https://web-production-31c68.up.railway.app',
+            // WebSocket version of same URL (wss:// not https://)
+            BACKEND_WS: 'wss://web-production-31c68.up.railway.app',
+        };
+
         // ── Persistent Runtime Session State Properties ─────────────────
         const sessionId = 'session_' + Math.random().toString(36).substring(2, 11);
         document.getElementById('sessionDisplay').textContent = `Session: ${sessionId.substring(8)}`;
@@ -359,8 +367,8 @@
             const lang = document.getElementById('langSelect').value;
             const profile = document.getElementById('profileSelect').value;
 
-            // Build path pointing directly to backend main framework port
-            const wsUrl = `ws://127.0.0.1:8000/ws/stream-audio?target_lang=${lang}&speaker_profile=${profile}&session_id=${sessionId}`;
+            // Connected using dynamic CONFIG pattern
+            const wsUrl = `${CONFIG.BACKEND_WS}/ws/stream-audio?target_lang=${lang}&speaker_profile=${profile}&session_id=${sessionId}`;
 
             if (ws) { ws.close(); }
 
@@ -374,13 +382,11 @@
 
             ws.onmessage = async (event) => {
                 if (event.data instanceof ArrayBuffer) {
-                    // Incoming stream payload is direct raw byte segment tracking
                     audioQueue.push(event.data);
                     playNextChunk();
                 } else {
                     const data = JSON.parse(event.data);
 
-                    // Real-time text injection updates from Gemini stream handler
                     if (data.type === 'transcript_interim') {
                         document.getElementById('textInput').placeholder = `Heard: "${data.text}"`;
                     } else if (data.type === 'llm_chunk') {
@@ -394,7 +400,7 @@
             ws.onclose = () => {
                 document.getElementById('statusText').textContent = 'Disconnected — Reconnecting...';
                 document.getElementById('statusDot').className = 'dot';
-                setTimeout(connectWebSocket, 3000); // Reconnection heartbeat block
+                setTimeout(connectWebSocket, 3000);
             };
         }
 
@@ -417,11 +423,10 @@
 
                 source.onended = () => {
                     isPlaying = false;
-                    setTimeout(playNextChunk, 0); // No macro-task boundary loop latency
+                    setTimeout(playNextChunk, 0);
                 };
                 source.start(0);
 
-                // 🎯 Parallel Optimization Step: Pre-decode subsequent buffer stream index ahead of execution
                 if (audioQueue.length > 0) {
                     audioContext.decodeAudioData(audioQueue[0].slice(0)).catch(() => { });
                 }
@@ -447,7 +452,7 @@
 
             try {
                 status.textContent = 'Processing text matrix pipeline...';
-                const resp = await fetch('http://127.0.0.1:8000/api/process-text', {
+                const resp = await fetch(`${CONFIG.BACKEND_HTTP}/api/process-text`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -484,7 +489,6 @@
         async function startRecording(e) {
             if (e) e.preventDefault();
 
-            // Reset state properties before processing updates
             audioQueue = [];
             document.getElementById('textInput').placeholder = 'Streaming speech...';
 
@@ -494,8 +498,6 @@
 
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-                // WebM capture loop mapping block
                 mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
 
                 mediaRecorder.ondataavailable = (event) => {
@@ -504,7 +506,7 @@
                     }
                 };
 
-                mediaRecorder.start(100); // 100ms slice chunks matching stream_handler requirements
+                mediaRecorder.start(100);
                 setupVisualizer(stream);
             } catch (err) {
                 console.error('[Microphone Capture Exception Check]:', err);
@@ -555,7 +557,7 @@
 
                 status.textContent = 'Syncing network profile arrays...';
 
-                const resp = await fetch('http://127.0.0.1:8000/api/process-voice', {
+                const resp = await fetch(`${CONFIG.BACKEND_HTTP}/api/process-voice`, {
                     method: 'POST',
                     body: formData
                 });
