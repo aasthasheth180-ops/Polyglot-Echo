@@ -1,10 +1,12 @@
 # backend/main.py
 import os
 import uuid
-from fastapi import FastAPI, UploadFile, File, Form, Response, Header, WebSocket
-from fastapi.middleware.cors import CORSMiddleware
+import time
 from typing import Optional
 from dotenv import load_dotenv
+from fastapi import FastAPI, UploadFile, File, Form, Response, Header, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 # Load environmental variables
 load_dotenv()
@@ -12,7 +14,7 @@ load_dotenv()
 # Internal imports
 from backend.pipeline import process_audio_loop
 from backend.llm_engine import llm_engine
-from backend.ai_client import check_colab_health
+from backend.ai_client import check_colab_health, synthesize_speech
 from pipeline.models import create_tables
 from backend.stream_handler import handle_voice_stream
 
@@ -30,6 +32,13 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
+# ── 🎯 Data Models for REST Injections ────────────────────────
+class TextRequest(BaseModel):
+    text:            str
+    target_lang:     str = "en"
+    speaker_profile: str = "aastha"
+
+
 # ── WebSocket Live Streaming Gateway ───────────────────────────
 @app.websocket("/ws/stream-audio")
 async def websocket_endpoint(websocket: WebSocket):
@@ -46,6 +55,7 @@ async def websocket_endpoint(websocket: WebSocket):
         session_id=session_id
     )
 
+
 # ── Standard HTTP REST Endpoints ───────────────────────────────
 @app.get("/health")
 async def health():
@@ -55,6 +65,46 @@ async def health():
         "status": "ok",
         "colab_ai": "connected" if colab_ok else "disconnected"
     }
+
+
+@app.post("/api/process-text")
+async def process_text(
+    request: TextRequest,
+    x_session_id: Optional[str] = Header(default=None)
+):
+    """Process text input — same pipeline as audio but skips Whisper."""
+    session_id = x_session_id or str(uuid.uuid4())
+
+    # Go straight to LLM — no Whisper needed
+    llm_result = llm_engine.generate(
+        request.text, request.target_lang, session_id
+    )
+    ai_text = llm_result["text"]
+    llm_ms  = llm_result["latency_ms"]
+
+    # TTS Synthesis
+    tts_start   = time.time()
+    audio_bytes = synthesize_speech(
+        text=ai_text,
+        target_lang=request.target_lang,
+        speaker_profile=request.speaker_profile,
+        ref_text="Hey, how have you been lately?"
+    )
+    tts_ms    = int((time.time() - tts_start) * 1000)
+    total_ms  = llm_ms + tts_ms
+
+    return Response(
+        content=audio_bytes,
+        media_type="audio/wav",
+        headers={
+            "X-Response-Text":    ai_text,
+            "X-Session-Id":       session_id,
+            "X-LLM-MS":           str(llm_ms),
+            "X-TTS-MS":           str(tts_ms),
+            "X-Latency-Total-MS": str(total_ms)
+        }
+    )
+
 
 @app.post("/api/process-voice")
 async def process_voice(
@@ -91,6 +141,7 @@ async def process_voice(
             "X-Latency-Total-MS": str(result["latency"]["total_ms"])
         }
     )
+
 
 @app.delete("/api/session/{session_id}")
 async def clear_session(session_id: str):

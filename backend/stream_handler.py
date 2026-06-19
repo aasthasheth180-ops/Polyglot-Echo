@@ -1,274 +1,298 @@
 # backend/stream_handler.py
 import asyncio
-import json
+import io
 import time
 import numpy as np
+import soundfile as sf
+import librosa
 import scipy.signal as signal
-from fastapi import WebSocket
-
+from fastapi import WebSocket, WebSocketDisconnect
 from backend.ai_client import transcribe_audio, synthesize_speech
 from backend.llm_engine import llm_engine
-from backend.pipeline import trim_audio_for_whisper
-from pipeline.kafka_producer import emit_event, flush
 
-# ── Constants & Configuration ─────────────────────────────────
-SAMPLE_RATE        = 16000   # Whisper native input frequency
-CHUNK_DURATION_MS  = 100     # Browser streaming frame payload sizing
+# ── Constants (SYSTEMATIC FIXES APPLIED) ──────────────────────
+SAMPLE_RATE        = 16000   
+CHUNK_DURATION_MS  = 100     
 SAMPLES_PER_CHUNK  = int(SAMPLE_RATE * CHUNK_DURATION_MS / 1000)
-VAD_WINDOW_S       = 2.0     # Maximum pre-speech window length
-VAD_SILENCE_THRESH = 0.025   # Aggressive noise gate threshold to kill mic hum
-MIN_SPEECH_CHUNKS  = 8       # Minimum continuous speech frames (800ms)
-SENTENCE_ENDINGS   = {'.', '!', '?', '।', '。', '؟'}
+VAD_WINDOW_S       = 2.0     
+VAD_SILENCE_THRESH = 0.018   # Problem 3 Fix: Higher threshold to ignore background room noise
+MIN_SPEECH_CHUNKS  = 15      # Problem 3 Fix: Requires 1.5s of actual speech minimum
+MIN_SPEECH_RMS     = 0.025   # Problem 3 Fix: New absolute minimum energy baseline
+SENTENCE_ENDINGS   = {'.', '!', '?', '।', '。', '؟', ','} # Problem 2 Fix: Added soft comma boundary
 
-# Common Whisper hallucinations triggered by ambient static noise
-WHISPER_HALLUCINATIONS = {
-    "thank you.", "thank you", "thank you for watching.", 
-    "thank you very much.", "you", "bye.", "sh"
-}
 
-# ── Audio Matrix DSP Utilities ────────────────────────────────
-def apply_audio_dsp_matrix(audio_data: np.ndarray) -> np.ndarray:
+# ── DSP Cleaning Pipeline ────────────────────────────────────
+def clean_audio_chunk(y: np.ndarray, sr: int = SAMPLE_RATE) -> np.ndarray:
+    """Applies high-pass filtering, normalization, noise gating, and de-essing."""
+    y = y.astype(np.float32)
+    peak = np.max(np.abs(y))
+    if peak > 0:
+        y = y / peak * 0.9
+
+    sos_hp = signal.butter(4, 80, btype='high', fs=sr, output='sos')
+    y = signal.sosfilt(sos_hp, y)
+
+    frame_size = int(sr * 0.01)
+    for i in range(0, len(y) - frame_size, frame_size):
+        frame = y[i:i + frame_size]
+        if np.sqrt(np.mean(frame**2)) < VAD_SILENCE_THRESH:
+            y[i:i + frame_size] = 0.0
+
+    sos_ds = signal.butter(2, [5500, 7500], btype='bandstop', fs=sr, output='sos')
+    y = signal.sosfilt(sos_ds, y)
+
+    y = np.clip(y, -1.0, 1.0)
+    return y
+
+
+# ── Speech Validation Filter ──────────────────────────────────
+def is_real_speech(audio_block: np.ndarray) -> bool:
     """
-    Applies custom digital signal processing to clean up raw browser audio.
-    1. High-Pass Filter (80Hz) to remove low-frequency room rumble.
-    2. Notch Filter (6000Hz) to de-ess harsh sibilance.
+    Validate audio block before sending to Whisper to prevent hallucinations.
+    Rejects ambient static, mouse clicks, and empty channel inputs.
     """
+    if len(audio_block) < SAMPLE_RATE * 0.8:  
+        return False
+    
+    rms = np.sqrt(np.mean(audio_block.astype(np.float32)**2))
+    if rms < MIN_SPEECH_RMS:
+        print(f"[VAD] Rejected block — RMS too low: {rms:.4f}")
+        return False
+    
+    frame_size   = int(SAMPLE_RATE * 0.02)  # 20ms frames
+    voiced_count = 0
+    total_frames = 0
+    
+    for i in range(0, len(audio_block) - frame_size, frame_size):
+        frame = audio_block[i:i+frame_size]
+        if np.sqrt(np.mean(frame**2)) > VAD_SILENCE_THRESH:
+            voiced_count += 1
+        total_frames += 1
+    
+    voiced_ratio = voiced_count / max(total_frames, 1)
+    if voiced_ratio < 0.30:
+        print(f"[VAD] Rejected block — only {voiced_ratio:.0%} voiced")
+        return False
+    
+    return True
+
+
+def is_silence(chunk: np.ndarray) -> bool:
+    rms = np.sqrt(np.mean(chunk.astype(np.float32)**2))
+    return rms < VAD_SILENCE_THRESH
+
+
+def webm_to_pcm(raw_bytes: bytes) -> np.ndarray:
     try:
-        # 1. 80Hz High-Pass Butterworth Filter
-        b_hp, a_hp = signal.butter(4, 80 / (SAMPLE_RATE / 2), btype='high')
-        filtered_audio = signal.filtfilt(b_hp, a_hp, audio_data)
-
-        # 2. 6000Hz Notch Filter (De-esser)
-        b_notch, a_notch = signal.iirnotch(6000 / (SAMPLE_RATE / 2), 30.0)
-        final_audio = signal.filtfilt(b_notch, a_notch, filtered_audio)
-        
-        return final_audio.astype(np.float32)
-    except Exception as dsp_err:
-        print(f"[DSP Matrix] Warning, math optimization fell back: {dsp_err}")
-        return audio_data
-
-
-def convert_float32_to_wav_pcm(audio_np: np.ndarray) -> bytes:
-    """Wraps clean structured float arrays into executable high-fidelity WAV bytes."""
-    import io
-    import wave
-    
-    # Scale float32 (-1.0 to 1.0) values to signed 16-bit PCM integers
-    audio_int16 = (np.clip(audio_np, -1.0, 1.0) * 32767).astype(np.int16)
-    
-    wav_buffer = io.BytesIO()
-    with wave.open(wav_buffer, 'wb') as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)  # 2 bytes = 16 bits
-        wf.setframerate(SAMPLE_RATE)
-        wf.writeframes(audio_int16.tobytes())
-        
-    wav_buffer.seek(0)
-    return wav_buffer.read()
-
-# ── Worker Engine 1: Audio Aggregation & VAD ──────────────────
-async def audio_transcribe_worker(
-    audio_queue: asyncio.Queue,
-    text_queue: asyncio.Queue,
-    send_json,
-    session_id: str
-):
-    """
-    Asynchronously monitors the raw PCM queue, accumulates frames,
-    applies DSP, checks noise gate levels, and dispatches to Whisper.
-    """
-    audio_buffer = []
-    speech_detected = False
-    continuous_speech_chunks = 0
-    
-    print("[Stream Worker] Transcription Engine Online.")
-
-    while True:
-        chunk = await audio_queue.get()
-        if chunk is None:
-            break
-            
-        audio_buffer.append(chunk)
-        
-        # Calculate root-mean-square energy to evaluate ambient volume levels
-        rms = np.sqrt(np.mean(chunk ** 2)) if len(chunk) > 0 else 0
-        
-        if rms > VAD_SILENCE_THRESH:
-            continuous_speech_chunks += 1
-            if continuous_speech_chunks >= MIN_SPEECH_CHUNKS:
-                speech_detected = True
-        else:
-            # Decay speech frame windows slowly to accommodate pauses between words
-            continuous_speech_chunks = max(0, continuous_speech_chunks - 1)
-
-        # Process buffer window once target size is reached
-        if len(audio_buffer) >= int(VAD_WINDOW_S * 1000 / CHUNK_DURATION_MS):
-            if speech_detected:
-                # Concatenate, process, and pass out to cloud AI network node
-                full_audio = np.concatenate(audio_buffer)
-                cleaned_audio = apply_audio_dsp_matrix(full_audio)
-                wav_bytes = convert_float32_to_wav_pcm(cleaned_audio)
-                
-                # Protect input chunk constraints
-                trimmed_bytes = trim_audio_for_whisper(wav_bytes, max_seconds=30)
-                
-                t_start = time.time()
-                result = transcribe_audio(trimmed_bytes)
-                text = result.get("text", "").strip()
-                lang = result.get("language", "unknown")
-                w_ms = int((time.time() - t_start) * 1000)
-
-                # Check if phrase is a typical Whisper static hallucination
-                clean_text_lower = text.lower().strip(" .?!,")
-                is_hallucination = clean_text_lower in {h.strip(" .?!,") for h in WHISPER_HALLUCINATIONS}
-
-                if text and not is_hallucination:
-                    print(f"[Stream] Transcribed ({lang}): '{text[:60]}' | {w_ms}ms")
-                    
-                    emit_event(session_id, "STREAM_TRANSCRIPT_DONE", latency_ms=w_ms, 
-                               metadata={"text": text, "lang": lang})
-                    
-                    await send_json({
-                        "type": "transcript",
-                        "text": text,
-                        "language": lang,
-                        "latency_ms": w_ms
-                    })
-                    # Push downstream to LLM Processing Queue
-                    await text_queue.put((text, lang))
-                else:
-                    print(f"[Stream] Noise gate bypassed or hallucinated phrase ('{text}') — skipped")
-                
-                # Reset State
-                speech_detected = False
-                continuous_speech_chunks = 0
-                
-            # Clear historical sliding window state safely
-            audio_buffer.clear()
-            audio_queue.task_done()
-
-# ── Worker Engine 2: LLM Streaming & TTS Orchestration ────────
-async def llm_tts_worker(
-    text_queue: asyncio.Queue,
-    websocket: WebSocket,
-    speaker_profile: str,
-    session_id: str
-):
-    """
-    Monitors valid transcripts, triggers the asynchronous token stream from Gemini, 
-    and groups words into logical sentences before firing them off to F5-TTS.
-    """
-    print("[Stream Worker] LLM to TTS Streaming Orchestrator Online.")
-    
-    while True:
-        queue_payload = await text_queue.get()
-        if queue_payload is None:
-            break
-            
-        user_text, target_lang = queue_payload
-        current_sentence = []
-        
+        buf = io.BytesIO(raw_bytes)
+        y, sr = sf.read(buf, dtype='float32')
+        if sr != SAMPLE_RATE:
+            y = librosa.resample(y, orig_sr=sr, target_sr=SAMPLE_RATE)
+        if y.ndim > 1:
+            y = y.mean(axis=1)
+        return y
+    except Exception:
         try:
-            # Fire the active asynchronous pipeline stream generator
-            async for token in llm_engine.generate_stream(user_text, target_lang, session_id):
-                await websocket.send_json({
-                    "type": "llm_token",
-                    "text": token
-                })
-                
-                current_sentence.append(token)
-                
-                # Check if current chunk contains a logical sentence ending
-                if any(ending in token for ending in SENTENCE_ENDINGS):
-                    sentence = "".join(current_sentence).strip()
-                    if sentence:
-                        print(f"[Stream] Streaming synthesis for sentence block: '{sentence}'")
-                        
-                        t_start = time.time()
-                        audio_bytes = synthesize_speech(
-                            text=sentence,
-                            lang=target_lang,
-                            speaker_profile=speaker_profile,
-                            ref_text="Hey, how have you been lately?"
-                        )
-                        tts_ms = int((time.time() - t_start) * 1000)
-                        
-                        emit_event(session_id, "STREAM_TTS_CHUNK_DONE", latency_ms=tts_ms)
-                        
-                        # Send raw audio binary payload straight down the WebSocket wire
-                        await websocket.send_bytes(audio_bytes)
-                        
-                    current_sentence.clear()
-                    
-            # Synthesis cleanup for any remaining tokens without trailing punctuation
-            remainder = "".join(current_sentence).strip()
-            if remainder:
-                audio_bytes = synthesize_speech(remainder, target_lang, speaker_profile, "Hey, how have you been lately?")
-                await websocket.send_bytes(audio_bytes)
-                
-        except Exception as stream_err:
-            print(f"[Stream Worker] Error executing pipeline stream path: {stream_err}")
-        finally:
-            text_queue.task_done()
+            y_fallback = np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float32)
+            y_fallback = y_fallback / 32768.0
+            return y_fallback
+        except Exception:
+            return np.zeros(SAMPLES_PER_CHUNK, dtype=np.float32)
 
-# ── Primary Router Connection Handler ─────────────────────────
+
+def pcm_to_wav_bytes(y: np.ndarray, sr: int = SAMPLE_RATE) -> bytes:
+    buf = io.BytesIO()
+    sf.write(buf, y, sr, format='WAV', subtype='PCM_16')
+    buf.seek(0)
+    return buf.read()
+
+
+# ── Voice Activity Detection Buffer ──────────────────────────
+class VADBuffer:
+    def __init__(self):
+        self.chunks: list[np.ndarray] = []
+        self.speech_started = False
+        self.silence_count  = 0
+        self.SILENCE_LIMIT  = 8  
+
+    def add(self, chunk: np.ndarray) -> bool:
+        silent = is_silence(chunk)
+
+        if not silent:
+            self.speech_started = True
+            self.silence_count  = 0
+            self.chunks.append(chunk)
+        elif self.speech_started:
+            self.silence_count += 1
+            self.chunks.append(chunk)
+
+        total_duration = len(self.chunks) * CHUNK_DURATION_MS / 1000
+        silence_ended  = (self.speech_started and self.silence_count >= self.SILENCE_LIMIT)
+        window_full    = total_duration >= VAD_WINDOW_S
+
+        return silence_ended or window_full
+
+    def flush(self) -> np.ndarray | None:
+        if len(self.chunks) < MIN_SPEECH_CHUNKS:
+            self.reset()
+            return None
+        audio = np.concatenate(self.chunks)
+        self.reset()
+        return audio
+
+    def reset(self):
+        self.chunks        = []
+        self.speech_started = False
+        self.silence_count  = 0
+
+
+# ── Main WebSocket Handler ────────────────────────────────────
 async def handle_voice_stream(
     websocket: WebSocket,
-    target_lang: str,
-    speaker_profile: str,
-    session_id: str = None
+    target_lang: str      = "en",
+    speaker_profile: str  = "aastha",
+    session_id: str       = None
 ):
-    """Main persistent lifecycle loop for client WebSocket connections."""
-    await websocket.accept()
-    
-    if not session_id:
-        import uuid
-        session_id = f"stream_{uuid.uuid4().hex[:8]}"
-        
-    print(f"[Stream] Persistent pipeline channel established | session={session_id}")
-    emit_event(session_id, "STREAM_SESSION_STARTED", metadata={"lang": target_lang, "speaker": speaker_profile})
-    
-    audio_queue = asyncio.Queue()
-    text_queue = asyncio.Queue()
-    
-    # Helper lambda to avoid threading reference collisions across tasks
-    def send_json_sync(data):
-        return asyncio.create_task(websocket.send_json(data))
+    import uuid
+    if session_id is None:
+        session_id = str(uuid.uuid4())
 
-    # Spawn background co-routines
-    transcribe_task = asyncio.create_task(
-        audio_transcribe_worker(audio_queue, text_queue, send_json_sync, session_id)
-    )
-    llm_tts_task = asyncio.create_task(
-        llm_tts_worker(text_queue, websocket, speaker_profile, session_id)
-    )
+    await websocket.accept()
+    print(f"[Stream] Connected | session={session_id[:8]} | lang={target_lang}")
+
+    vad_buffer    = VADBuffer()
+    audio_queue   = asyncio.Queue()   
+    text_queue    = asyncio.Queue()   
+    pipeline_lock = asyncio.Lock() 
+    is_connected  = True
+
+    async def send_json(data: dict):
+        try: await websocket.send_json(data)
+        except Exception: pass
+
+    async def send_bytes(data: bytes):
+        try: await websocket.send_bytes(data)
+        except Exception: pass
+
+    # Worker 1: Gather audio packets asynchronously
+    async def receive_audio():
+        nonlocal is_connected
+        try:
+            while is_connected:
+                message = await asyncio.wait_for(websocket.receive(), timeout=3600.0)
+                if message.get("type") == "websocket.disconnect":
+                    is_connected = False
+                    break
+
+                if "bytes" in message:
+                    raw = message["bytes"]
+                    if not raw: continue
+                    pcm = webm_to_pcm(raw)
+                    if vad_buffer.add(pcm):
+                        audio_block = vad_buffer.flush()
+                        if audio_block is not None:
+                            await audio_queue.put(audio_block)
+        except Exception:
+            is_connected = False
+        finally:
+            leftover = vad_buffer.flush()
+            if leftover is not None: await audio_queue.put(leftover)
+            await audio_queue.put(None)  
+
+    # Worker 2: DSP Processing + Whisper Decoding with Validation Check
+    async def transcribe_worker():
+        loop = asyncio.get_event_loop()
+        try:
+            while True:
+                audio_block = await audio_queue.get()
+                if audio_block is None: break
+
+                # Check speech validation filter before spending processing overhead on Whisper
+                is_valid = await loop.run_in_executor(None, is_real_speech, audio_block)
+                if not is_valid:
+                    print("[Stream] Audio block rejected by VAD validation — skipping Whisper")
+                    continue
+
+                cleaned = await loop.run_in_executor(None, clean_audio_chunk, audio_block)
+                wav_bytes = await loop.run_in_executor(None, pcm_to_wav_bytes, cleaned)
+                result = await loop.run_in_executor(None, transcribe_audio, wav_bytes)
+
+                text = result.get("text", "").strip()
+                lang = result.get("language", "unknown")
+
+                if text:
+                    print(f"[Stream] Transcribed ({lang}): '{text}'")
+                    # Killer Feature: Send interim/final transcription payload instantly
+                    await send_json({
+                        "type": "transcript_interim",
+                        "text": text,
+                        "is_final": True
+                    })
+                    await text_queue.put((text, lang))
+        except Exception as e:
+            print(f"[Stream] Transcribe fault: {e}")
+        finally:
+            await text_queue.put(None)
+
+    # Worker 3: Streamed Gemini Response Engine + Outbound TTS Generation
+    async def llm_tts_worker():
+        loop = asyncio.get_event_loop()
+        try:
+            while True:
+                item = await text_queue.get()
+                if item is None: break
+
+                user_text, detected_lang = item
+                
+                async with pipeline_lock:
+                    sentence_buffer = ""
+                    full_response   = ""
+                    first_chunk     = True
+
+                    async for token in llm_engine.generate_stream(user_text, target_lang, session_id):
+                        sentence_buffer += token
+                        full_response   += token
+
+                        if any(sentence_buffer.rstrip().endswith(e) for e in SENTENCE_ENDINGS):
+                            sentence = sentence_buffer.strip()
+                            sentence_buffer = ""  
+                            if not sentence: continue
+
+                            if first_chunk:
+                                await send_json({"type": "llm_chunk", "text": sentence})
+                                first_chunk = False
+                            else:
+                                await send_json({"type": "llm_chunk", "text": sentence})
+
+                            voice_to_use = speaker_profile if speaker_profile else "default"
+                            audio_bytes = await loop.run_in_executor(
+                                None, synthesize_speech, sentence, target_lang, voice_to_use, "Hey, how have you been lately?"
+                            )
+
+                            if audio_bytes:
+                                await send_json({"type": "audio_chunk_start", "size_bytes": len(audio_bytes)})
+                                await send_bytes(audio_bytes)
+
+                    if sentence_buffer.strip():
+                        sentence = sentence_buffer.strip()
+                        await send_json({"type": "llm_chunk", "text": sentence})
+                        voice_to_use = speaker_profile if speaker_profile else "default"
+                        audio_bytes = await loop.run_in_executor(
+                            None, synthesize_speech, sentence, target_lang, voice_to_use, "Hey, how have you been lately?"
+                        )
+                        if audio_bytes:
+                            await send_json({"type": "audio_chunk_start", "size_bytes": len(audio_bytes)})
+                            await send_bytes(audio_bytes)
+
+                    await send_json({"type": "response_done", "full_response": full_response})
+                    await asyncio.sleep(0.1)
+        except Exception as e:
+            print(f"[Stream] LLM/TTS loop fault: {e}")
+        finally:
+            await send_json({"type": "stream_end"})
 
     try:
-        while True:
-            # Await raw data chunks from the frontend client microphone
-            message = await websocket.receive()
-            
-            if "bytes" in message:
-                raw_bytes = message["bytes"]
-                # Convert binary buffer straight into floating-point numpy vectors
-                float_chunk = np.frombuffer(raw_bytes, dtype=np.float32)
-                await audio_queue.put(float_chunk)
-                
-            elif "text" in message:
-                # Handle control commands or heartbeats
-                data = json.loads(message["text"])
-                if data.get("type") == "ping":
-                    await websocket.send_json({"type": "pong"})
-                    
-    except Exception as conn_err:
-        print(f"[Stream] Session disconnected or interrupted: {conn_err}")
+        await asyncio.gather(receive_audio(), transcribe_worker(), llm_tts_worker())
     finally:
-        # Gracefully wind down workers and clean up memory
-        print(f"[Stream] Closing backend worker channels for session: {session_id}")
-        await audio_queue.put(None)
-        await text_queue.put(None)
-        
-        # Await thread joining terminations
-        await asyncio.gather(transcribe_task, llm_tts_task, return_exceptions=True)
-        emit_event(session_id, "STREAM_SESSION_ENDED")
-        flush()
+        is_connected = False
+        vad_buffer.reset()

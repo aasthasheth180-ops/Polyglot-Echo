@@ -4,476 +4,652 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Polyglot Echo — Live Stream</title>
+    <title>Polyglot Echo — Realtime Console</title>
     <style>
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
 
         body {
-            background: #0F1117;
+            background: #1A202C;
             color: #E2E8F0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            padding: 30px;
             display: flex;
             flex-direction: column;
-            height: 100vh;
-            overflow: hidden;
-        }
-
-        .header {
-            padding: 16px 24px;
-            border-bottom: 1px solid #2D3748;
-            display: flex;
             align-items: center;
-            justify-content: space-between;
+            min-height: 100vh;
         }
 
-        .header h1 {
-            font-size: 1.3rem;
-            font-weight: 700;
-            color: #E2E8F0;
-        }
-
-        .status-pill {
+        .container {
+            width: 100%;
+            max-width: 800px;
             display: flex;
-            align-items: center;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        header h1 {
+            color: #3182CE;
+            margin-bottom: 6px;
+            font-size: 2.2rem;
+        }
+
+        header p {
+            color: #A0AEC0;
+            font-size: 0.95rem;
+        }
+
+        .control-panel {
+            background: #2D3748;
+            border-radius: 16px;
+            padding: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            border: 1px solid #4A5568;
+        }
+
+        .control-group {
+            flex: 1;
+            min-width: 180px;
+            display: flex;
+            flex-direction: column;
             gap: 8px;
+        }
+
+        .control-group label {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #CBD5E0;
+            font-weight: 600;
+        }
+
+        .control-group select {
             background: #1A202C;
-            border-radius: 20px;
-            padding: 6px 14px;
+            color: white;
+            border: 1px solid #4A5568;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 0.95rem;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .chat-display {
+            background: #2D3748;
+            border-radius: 16px;
+            height: 350px;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            border: 1px solid #4A5568;
+        }
+
+        .bubble {
+            max-width: 75%;
+            padding: 12px 16px;
+            border-radius: 14px;
+            font-size: 0.95rem;
+            line-height: 1.4;
+            position: relative;
+            animation: fadeIn 0.2s ease-in-out;
+        }
+
+        .bubble.user {
+            background: #3182CE;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 2px;
+        }
+
+        .bubble.ai {
+            background: #4A5568;
+            color: #F7FAFC;
+            align-self: flex-start;
+            border-bottom-left-radius: 2px;
+            border-left: 4px solid #48BB78;
+        }
+
+        .bubble-meta {
+            font-size: 0.7rem;
+            color: #A0AEC0;
+            margin-top: 4px;
+            display: block;
+            text-align: right;
+        }
+
+        .mic-area {
+            background: #2D3748;
+            border-radius: 16px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #4A5568;
+            min-height: 140px;
+            position: relative;
+        }
+
+        .mic-btn {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: #E53E3E;
+            border: none;
+            font-size: 1.8rem;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 0 0 rgba(229, 62, 62, 0.7);
+            transition: transform 0.1s, background 0.2s;
+            user-select: none;
+        }
+
+        .mic-btn:active {
+            transform: scale(0.92);
+            background: #C53030;
+        }
+
+        .mic-btn.recording {
+            animation: pulse 1.5s infinite;
+            background: #C53030;
+        }
+
+        .mic-hint {
+            font-size: 0.85rem;
+            color: #A0AEC0;
+            margin-top: 10px;
+            font-weight: 500;
+        }
+
+        #waveCanvas {
+            width: 100%;
+            height: 40px;
+            margin-bottom: 12px;
+            display: none;
+        }
+
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 10px;
             font-size: 0.8rem;
+            color: #718096;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .dot {
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: #FC8181;
-            transition: background 0.3s;
+            background: #718096;
         }
 
-        .dot.connected {
+        .dot.online {
             background: #48BB78;
-        }
-
-        .dot.recording {
-            background: #F6AD55;
-            animation: pulse 1s infinite;
+            animation: blink 2s infinite;
         }
 
         @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(229, 62, 62, 0.7);
+            }
+
+            70% {
+                box-shadow: 0 0 0 15px rgba(229, 62, 62, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(229, 62, 62, 0);
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes blink {
 
             0%,
             100% {
-                opacity: 1;
+                opacity: 0.5;
             }
 
             50% {
-                opacity: 0.3;
+                opacity: 1;
             }
-        }
-
-        .controls {
-            padding: 12px 24px;
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            border-bottom: 1px solid #2D3748;
-        }
-
-        select {
-            background: #2D3748;
-            color: #E2E8F0;
-            border: 1px solid #4A5568;
-            border-radius: 8px;
-            padding: 6px 12px;
-            font-size: 0.85rem;
-            cursor: pointer;
-        }
-
-        .chat-area {
-            flex: 1;
-            overflow-y: auto;
-            padding: 16px 24px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .bubble {
-            max-width: 70%;
-            padding: 10px 14px;
-            border-radius: 16px;
-            font-size: 0.9rem;
-            line-height: 1.5;
-        }
-
-        .bubble.user {
-            background: #2D3748;
-            align-self: flex-end;
-            border-bottom-right-radius: 4px;
-        }
-
-        .bubble.ai {
-            background: #1A365D;
-            color: #BEE3F8;
-            align-self: flex-start;
-            border-bottom-left-radius: 4px;
-        }
-
-        .bubble .label {
-            font-size: 0.7rem;
-            color: #718096;
-            margin-bottom: 4px;
-        }
-
-        .bubble .latency {
-            font-size: 0.7rem;
-            color: #4A5568;
-            margin-top: 6px;
-        }
-
-        .mic-area {
-            padding: 20px 24px;
-            border-top: 1px solid #2D3748;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .mic-btn {
-            width: 72px;
-            height: 72px;
-            border-radius: 50%;
-            border: none;
-            background: #2D3748;
-            color: #E2E8F0;
-            font-size: 1.8rem;
-            cursor: pointer;
-            transition: all 0.15s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            user-select: none;
-            -webkit-user-select: none;
-        }
-
-        .mic-btn:active,
-        .mic-btn.recording {
-            background: #E53E3E;
-            transform: scale(1.08);
-            box-shadow: 0 0 0 8px rgba(229, 62, 62, 0.2);
-        }
-
-        .mic-hint {
-            font-size: 0.8rem;
-            color: #4A5568;
-        }
-
-        .waveform {
-            width: 200px;
-            height: 40px;
-        }
-
-        canvas {
-            width: 200px;
-            height: 40px;
-            border-radius: 4px;
-            background: #1A202C;
         }
     </style>
 </head>
 
 <body>
 
-    <div class="header">
-        <h1>🎙️ Polyglot Echo</h1>
-        <div class="status-pill">
-            <div class="dot" id="statusDot"></div>
-            <span id="statusText">Disconnected</span>
+    <div class="container">
+        <header>
+            <h1>Polyglot Echo</h1>
+            <p>Real-time Multilingual Conversational Streaming Platform</p>
+        </header>
+
+        <div class="control-panel">
+            <div class="control-group">
+                <label for="langSelect">Target Language</label>
+                <select id="langSelect">
+                    <option value="en">English (US)</option>
+                    <option value="hi">Hindi (हिन्दी)</option>
+                    <option value="gu">Gujarati (ગુજરાતી)</option>
+                    <option value="es">Spanish (Español)</option>
+                    <option value="fr">French (Français)</option>
+                    <option value="de">German (Deutsch)</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="profileSelect">Speaker Profile (Voice)</label>
+                <select id="profileSelect">
+                    <option value="aastha">Aastha Clone (Tuned)</option>
+                    <option value="default">System Default Voice</option>
+                    <option value="guest">Guest Profile (On-the-fly)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="chat-display" id="chatDisplay">
+            <div class="bubble ai">
+                Hello! I am Polyglot Echo. Press and hold the microphone icon to stream audio, or type out your message
+                directly below!
+                <span class="bubble-meta">System Welcome</span>
+            </div>
+        </div>
+
+        <div class="mic-area">
+            <canvas id="waveCanvas"></canvas>
+
+            <div style="display:flex; gap:8px; width:100%; max-width:600px; margin-bottom:14px;">
+                <input type="text" id="textInput" placeholder="Type a message or hold mic to speak..."
+                    style="flex:1; background:#1A202C; color:#E2E8F0; border:1px solid #4A5568; border-radius:12px; padding:12px 16px; font-size:0.95rem; outline:none;"
+                    onkeydown="if(event.key==='Enter') sendTextMessage()" />
+                <button onclick="sendTextMessage()"
+                    style="background:#3182CE; color:white; border:none; border-radius:12px; padding:0 20px; cursor:pointer; font-size:0.95rem; font-weight:600; transition: background 0.2s;"
+                    onmouseover="this.style.background='#2B6CB0'" onmouseout="this.style.background='#3182CE'">
+                    Send
+                </button>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:16px; margin-bottom:12px;">
+                <button class="mic-btn" id="micBtn" onmousedown="startRecording()" onmouseup="stopRecording()"
+                    ontouchstart="startRecording(event)" ontouchend="stopRecording()">
+                    🎤
+                </button>
+                <span class="mic-hint" id="micHint">Hold to speak — release to send</span>
+            </div>
+
+            <div id="guestSetup" style="display:none; width:100%; max-width:600px; margin-top:6px;">
+                <div style="background:#2D3748; border-radius:12px; padding:16px; border:1px solid #F6AD55;">
+                    <p style="color:#F6AD55; font-size:0.85rem; margin-bottom:12px; font-weight:600;">
+                        ⚠️ Guest profile active — record your vocal sample first
+                    </p>
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <button onclick="recordGuestVoice()" id="guestRecordBtn"
+                            style="background:#1A202C; color:#E2E8F0; border:1px solid #4A5568; border-radius:8px; padding:10px 16px; cursor:pointer; font-size:0.85rem; font-weight:500;">
+                            🎙️ Record 10s voice reference
+                        </button>
+                        <span id="guestStatus" style="font-size:0.85rem; color:#A0AEC0;">
+                            Not recorded yet
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-indicator">
+                <div class="dot online" id="statusDot"></div>
+                <span id="statusText">Connected to Local Server</span>
+            </div>
+            <div id="sessionDisplay">Session: initializing...</div>
         </div>
     </div>
 
-    <div class="controls">
-        <select id="langSelect">
-            <option value="en">🇺🇸 English</option>
-            <option value="hi">🇮🇳 Hindi</option>
-            <option value="es">🇪🇸 Spanish</option>
-            <option value="fr">🇫🇷 French</option>
-            <option value="de">🇩🇪 German</option>
-            <option value="pt">🇵🇹 Portuguese</option>
-            <option value="ru">🇷🇺 Russian</option>
-            <option value="ar">🇸🇦 Arabic</option>
-            <option value="zh">🇨🇳 Chinese</option>
-            <option value="ja">🇯🇵 Japanese</option>
-        </select>
-
-        <select id="profileSelect">
-            <option value="aastha">🧑 Aastha (Tuned)</option>
-            <option value="guest">👤 Guest (Auto)</option>
-        </select>
-
-        <button onclick="connectWS()" id="connectBtn" style="background:#2D3748;color:#E2E8F0;border:1px solid #4A5568;
-                 border-radius:8px;padding:6px 14px;cursor:pointer;font-size:0.85rem;">
-            Connect
-        </button>
-    </div>
-
-    <div class="chat-area" id="chatArea"></div>
-
-    <div class="mic-area">
-        <canvas id="waveCanvas" width="200" height="40"></canvas>
-        <button class="mic-btn" id="micBtn" onmousedown="startRecording()" onmouseup="stopRecording()"
-            ontouchstart="startRecording()" ontouchend="stopRecording()">
-            🎤
-        </button>
-        <span class="mic-hint">Hold to speak — release to send</span>
-    </div>
-
     <script>
-        // ── State ──────────────────────────────────────────────────
+        // ── Persistent Runtime Session State Properties ─────────────────
+        const sessionId = 'session_' + Math.random().toString(36).substring(2, 11);
+        document.getElementById('sessionDisplay').textContent = `Session: ${sessionId.substring(8)}`;
+
         let ws = null;
         let mediaRecorder = null;
-        let audioCtx = null;
-        let analyser = null;
-        let animFrame = null;
-        let pendingChunks = [];
-        let isRecording = false;
-        let sessionId = crypto.randomUUID();
-        let audioQueue = [];    // WAV chunks waiting to play
+        let audioContext = null;
+        let audioQueue = [];
         let isPlaying = false;
+        let guestVoiceReady = false;
 
-        const chatArea = document.getElementById('chatArea');
-        const statusDot = document.getElementById('statusDot');
-        const statusText = document.getElementById('statusText');
-        const micBtn = document.getElementById('micBtn');
+        // Canvas Visualization context setup pointers
         const canvas = document.getElementById('waveCanvas');
         const canvasCtx = canvas.getContext('2d');
 
-        // ── WebSocket ──────────────────────────────────────────────
-        function connectWS() {
+        // ── WebSocket Gateway Connection Initializer ─────────────────────
+        function connectWebSocket() {
             const lang = document.getElementById('langSelect').value;
             const profile = document.getElementById('profileSelect').value;
-            const url = `ws://localhost:8000/ws/stream-audio?target_lang=${lang}&speaker_profile=${profile}&session_id=${sessionId}`;
 
-            ws = new WebSocket(url);
+            // Build path pointing directly to backend main framework port
+            const wsUrl = `ws://127.0.0.1:8000/ws/stream-audio?target_lang=${lang}&speaker_profile=${profile}&session_id=${sessionId}`;
+
+            if (ws) { ws.close(); }
+
+            ws = new WebSocket(wsUrl);
             ws.binaryType = 'arraybuffer';
 
             ws.onopen = () => {
-                statusDot.className = 'dot connected';
-                statusText.textContent = 'Connected';
-                document.getElementById('connectBtn').textContent = 'Connected ✓';
-                console.log('[WS] Connected');
+                document.getElementById('statusText').textContent = 'Live Audio Channel Sync Connected';
+                document.getElementById('statusDot').className = 'dot online';
+            };
+
+            ws.onmessage = async (event) => {
+                if (event.data instanceof ArrayBuffer) {
+                    // Incoming stream payload is direct raw byte segment tracking
+                    audioQueue.push(event.data);
+                    playNextChunk();
+                } else {
+                    const data = JSON.parse(event.data);
+
+                    // Real-time text injection updates from Gemini stream handler
+                    if (data.type === 'transcript_interim') {
+                        document.getElementById('textInput').placeholder = `Heard: "${data.text}"`;
+                    } else if (data.type === 'llm_chunk') {
+                        addBubble('ai', data.text, 'Streaming Token Chunk');
+                    } else if (data.type === 'response_done') {
+                        console.log('[Pipeline Stream Finish]:', data.full_response);
+                    }
+                }
             };
 
             ws.onclose = () => {
-                statusDot.className = 'dot';
-                statusText.textContent = 'Disconnected';
-                document.getElementById('connectBtn').textContent = 'Reconnect';
-                console.log('[WS] Closed');
+                document.getElementById('statusText').textContent = 'Disconnected — Reconnecting...';
+                document.getElementById('statusDot').className = 'dot';
+                setTimeout(connectWebSocket, 3000); // Reconnection heartbeat block
             };
-
-            ws.onerror = (e) => {
-                console.error('[WS] Error:', e);
-                statusText.textContent = 'Error — check backend';
-            };
-
-            ws.onmessage = handleMessage;
         }
 
-        // ── Message handler ────────────────────────────────────────
-        let currentAIBubble = null;
-        let currentAIText = '';
-        let expectingAudio = false;
-        let pendingAudioSize = 0;
-
-        function handleMessage(event) {
-            // Binary = audio WAV chunk
-            if (event.data instanceof ArrayBuffer) {
-                audioQueue.push(event.data);
-                playNextChunk();
-                return;
-            }
-
-            // JSON = metadata / text
-            const msg = JSON.parse(event.data);
-
-            if (msg.type === 'transcript') {
-                addBubble('user', `🎤 ${msg.text}`, `Detected: ${msg.language} | ${msg.latency_ms}ms`);
-                currentAIBubble = null;
-                currentAIText = '';
-            }
-
-            else if (msg.type === 'llm_chunk') {
-                currentAIText += msg.text + ' ';
-                if (!currentAIBubble) {
-                    currentAIBubble = addBubble('ai', currentAIText);
-                } else {
-                    const p = currentAIBubble.querySelector('.text');
-                    if (p) p.textContent = currentAIText;
-                }
-            }
-
-            else if (msg.type === 'audio_chunk_start') {
-                console.log(`[WS] Incoming audio: ${msg.size_bytes}B | TTS ${msg.tts_ms}ms`);
-            }
-
-            else if (msg.type === 'response_done') {
-                if (currentAIBubble) {
-                    const lat = currentAIBubble.querySelector('.latency');
-                    if (lat) lat.textContent = 'Response complete';
-                }
-            }
-
-            else if (msg.type === 'stream_end') {
-                console.log('[WS] Stream ended cleanly');
-            }
-        }
-
-        // ── Audio playback queue ───────────────────────────────────
+        // ── Optimized High-Performance Parallelized Audio Buffer Runner ──
         async function playNextChunk() {
             if (isPlaying || audioQueue.length === 0) return;
             isPlaying = true;
 
             const chunk = audioQueue.shift();
             try {
-                if (!audioCtx) audioCtx = new AudioContext({ sampleRate: 24000 });
-                const decoded = await audioCtx.decodeAudioData(chunk.slice(0));
-                const source = audioCtx.createBufferSource();
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                }
+                if (audioContext.state === 'suspended') await audioContext.resume();
+
+                const decoded = await audioContext.decodeAudioData(chunk.slice(0));
+                const source = audioContext.createBufferSource();
                 source.buffer = decoded;
-                source.connect(audioCtx.destination);
+                source.connect(audioContext.destination);
+
                 source.onended = () => {
                     isPlaying = false;
-                    playNextChunk();
+                    setTimeout(playNextChunk, 0); // No macro-task boundary loop latency
                 };
                 source.start(0);
+
+                // 🎯 Parallel Optimization Step: Pre-decode subsequent buffer stream index ahead of execution
+                if (audioQueue.length > 0) {
+                    audioContext.decodeAudioData(audioQueue[0].slice(0)).catch(() => { });
+                }
             } catch (e) {
-                console.warn('[Audio] Decode error:', e);
+                console.warn('[Audio Framework Pipeline Exception]:', e);
                 isPlaying = false;
-                playNextChunk();
+                setTimeout(playNextChunk, 20);
             }
         }
 
-        // ── Recording ──────────────────────────────────────────────
-        async function startRecording() {
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                alert('Connect to backend first');
-                return;
+        // ── HTTP Text Input Handler Processing Endpoint ──────────────────
+        async function sendTextMessage() {
+            const input = document.getElementById('textInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            input.value = '';
+            addBubble('user', `✏️ ${text}`, 'Text Input Input');
+
+            const lang = document.getElementById('langSelect').value;
+            const profile = document.getElementById('profileSelect').value;
+            const status = document.getElementById('statusText');
+
+            try {
+                status.textContent = 'Processing text matrix pipeline...';
+                const resp = await fetch('http://127.0.0.1:8000/api/process-text', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-Id': sessionId
+                    },
+                    body: JSON.stringify({
+                        text: text,
+                        target_lang: lang,
+                        speaker_profile: profile
+                    })
+                });
+
+                if (!resp.ok) throw new Error(`HTTP System Fault Status: ${resp.status}`);
+
+                const aiText = resp.headers.get('X-Response-Text') || '';
+                const totalMs = resp.headers.get('X-Latency-Total-MS') || '?';
+                const audioBlob = await resp.blob();
+
+                addBubble('ai', `🔊 ${aiText}`, `Total Processing Trace: ${totalMs}ms`);
+
+                const arrayBuf = await audioBlob.arrayBuffer();
+                audioQueue.push(arrayBuf);
+                playNextChunk();
+
+                status.textContent = 'Live Audio Channel Sync Connected';
+            } catch (e) {
+                console.error('[REST Transmission Pipeline Failure]:', e);
+                addBubble('ai', '❌ Connection pipeline processing layout timeout. Check backend logs.', 'Error');
+                status.textContent = 'Live Audio Channel Sync Connected';
             }
-            if (isRecording) return;
+        }
 
-            isRecording = true;
-            micBtn.classList.add('recording');
-            statusDot.className = 'dot recording';
-            statusText.textContent = 'Recording...';
+        // ── Audio Streaming Capture Handlers ─────────────────────────────
+        async function startRecording(e) {
+            if (e) e.preventDefault();
 
-            const stream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    sampleRate: 16000,
-                    channelCount: 1,
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true
-                }
-            });
+            // Reset state properties before processing updates
+            audioQueue = [];
+            document.getElementById('textInput').placeholder = 'Streaming speech...';
 
-            // Waveform visualizer
-            if (!audioCtx) audioCtx = new AudioContext({ sampleRate: 16000 });
-            const source = audioCtx.createMediaStreamSource(stream);
-            analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 256;
-            source.connect(analyser);
-            drawWaveform();
+            const btn = document.getElementById('micBtn');
+            btn.className = 'mic-btn recording';
+            canvas.style.display = 'block';
 
-            mediaRecorder = new MediaRecorder(stream, {
-                mimeType: 'audio/webm;codecs=opus',
-                audioBitsPerSecond: 16000
-            });
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-            mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0 && ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(event.data);
-                }
-            };
+                // WebM capture loop mapping block
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
 
-            // Send every 100ms
-            mediaRecorder.start(100);
-            console.log('[Mic] Recording started');
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0 && ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(event.data);
+                    }
+                };
+
+                mediaRecorder.start(100); // 100ms slice chunks matching stream_handler requirements
+                setupVisualizer(stream);
+            } catch (err) {
+                console.error('[Microphone Capture Exception Check]:', err);
+                stopRecording();
+            }
         }
 
         function stopRecording() {
-            if (!isRecording) return;
-            isRecording = false;
-
-            micBtn.classList.remove('recording');
-            statusDot.className = 'dot connected';
-            statusText.textContent = 'Processing...';
+            const btn = document.getElementById('micBtn');
+            btn.className = 'mic-btn';
+            canvas.style.display = 'none';
+            document.getElementById('textInput').placeholder = 'Type a message or hold mic to speak...';
 
             if (mediaRecorder && mediaRecorder.state !== 'inactive') {
                 mediaRecorder.stop();
-                mediaRecorder.stream.getTracks().forEach(t => t.stop());
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
+        }
+
+        // ── On-the-fly Guest Audio Template Verification ─────────────────
+        async function recordGuestVoice() {
+            const btn = document.getElementById('guestRecordBtn');
+            const status = document.getElementById('guestStatus');
+
+            btn.textContent = '⏺️ Capturing structural fingerprint (10s)...';
+            btn.disabled = true;
+            status.textContent = 'Maintain active vocal pass...';
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const chunks = [];
+                const mr = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+
+                mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+                mr.start(100);
+
+                await new Promise(r => setTimeout(r, 10000));
+                mr.stop();
+                stream.getTracks().forEach(t => t.stop());
+
+                await new Promise(r => setTimeout(r, 200));
+
+                const blob = new Blob(chunks, { type: 'audio/webm' });
+                const formData = new FormData();
+                formData.append('audio_file', blob, 'guest_ref.wav');
+                formData.append('target_lang', document.getElementById('langSelect').value);
+                formData.append('speaker_profile', 'guest');
+
+                status.textContent = 'Syncing network profile arrays...';
+
+                const resp = await fetch('http://127.0.0.1:8000/api/process-voice', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (resp.ok) {
+                    guestVoiceReady = true;
+                    status.textContent = '✅ Profile Mounted Successfully';
+                    status.style.color = '#48BB78';
+                    btn.textContent = '🎙️ Re-record voice reference?';
+                    btn.disabled = false;
+
+                    document.getElementById('micBtn').disabled = false;
+                    document.getElementById('textInput').disabled = false;
+                    connectWebSocket();
+                } else {
+                    throw new Error('Endpoint reject signature profile layout.');
+                }
+            } catch (e) {
+                status.textContent = '❌ Target upload generation failed.';
+                btn.textContent = '🎙️ Record 10s voice reference';
+                btn.disabled = false;
+                console.error(e);
+            }
+        }
+
+        // UI Field Event Handlers
+        document.getElementById('profileSelect').addEventListener('change', function () {
+            const guestDiv = document.getElementById('guestSetup');
+            guestDiv.style.display = this.value === 'guest' ? 'block' : 'none';
+
+            if (this.value === 'guest' && !guestVoiceReady) {
+                document.getElementById('micBtn').disabled = true;
+                document.getElementById('textInput').disabled = true;
+            } else {
+                document.getElementById('micBtn').disabled = false;
+                document.getElementById('textInput').disabled = false;
+                connectWebSocket();
+            }
+        });
+
+        document.getElementById('langSelect').addEventListener('change', () => connectWebSocket());
+
+        // ── Interface Utility Helper Functions ───────────────────────────
+        function addBubble(sender, text, meta) {
+            const display = document.getElementById('chatDisplay');
+            const bubble = document.createElement('div');
+            bubble.className = `bubble ${sender}`;
+            bubble.textContent = text;
+
+            if (meta) {
+                const metaSpan = document.createElement('span');
+                metaSpan.className = 'bubble-meta';
+                metaSpan.textContent = meta;
+                bubble.appendChild(metaSpan);
             }
 
-            cancelAnimationFrame(animFrame);
-            clearCanvas();
-
-            console.log('[Mic] Recording stopped — waiting for response');
+            display.appendChild(bubble);
+            display.scrollTop = display.scrollHeight;
         }
 
-        // ── Waveform canvas ────────────────────────────────────────
-        function drawWaveform() {
-            animFrame = requestAnimationFrame(drawWaveform);
-            if (!analyser) return;
+        function setupVisualizer(stream) {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const analyser = audioCtx.createAnalyser();
+            const source = audioCtx.createMediaStreamSource(stream);
+            source.connect(analyser);
 
-            const data = new Uint8Array(analyser.frequencyBinCount);
-            analyser.getByteTimeDomainData(data);
+            analyser.fftSize = 256;
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
 
-            canvasCtx.fillStyle = '#1A202C';
-            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
-            canvasCtx.lineWidth = 2;
-            canvasCtx.strokeStyle = '#48BB78';
-            canvasCtx.beginPath();
+            function draw() {
+                if (canvas.style.display === 'none') return;
+                requestAnimationFrame(draw);
 
-            const sliceW = canvas.width / data.length;
-            let x = 0;
-            for (let i = 0; i < data.length; i++) {
-                const v = data[i] / 128.0;
-                const y = (v * canvas.height) / 2;
-                i === 0 ? canvasCtx.moveTo(x, y) : canvasCtx.lineTo(x, y);
-                x += sliceW;
+                analyser.getByteFrequencyData(dataArray);
+                canvasCtx.fillStyle = '#2D3748';
+                canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const barWidth = (canvas.width / bufferLength) * 2.5;
+                let barHeight;
+                let x = 0;
+
+                for (let i = 0; i < bufferLength; i++) {
+                    barHeight = dataArray[i] / 4;
+                    canvasCtx.fillStyle = `rgb(${barHeight + 100}, 50, 50)`;
+                    canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                    x += barWidth + 1;
+                }
             }
-            canvasCtx.lineTo(canvas.width, canvas.height / 2);
-            canvasCtx.stroke();
+            draw();
         }
 
-        function clearCanvas() {
-            canvasCtx.fillStyle = '#1A202C';
-            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
-        }
-
-        // ── Chat bubbles ───────────────────────────────────────────
-        function addBubble(role, text, latencyText = '') {
-            const div = document.createElement('div');
-            div.className = `bubble ${role}`;
-            div.innerHTML = `
-    <div class="label">${role === 'user' ? 'You' : '🔊 Echo'}</div>
-    <div class="text">${text}</div>
-    ${latencyText ? `<div class="latency">${latencyText}</div>` : ''}
-  `;
-            chatArea.appendChild(div);
-            chatArea.scrollTop = chatArea.scrollHeight;
-            return div;
-        }
-
-        // Auto-connect on load
-        window.onload = () => {
-            clearCanvas();
-            // Uncomment to auto-connect:
-            // connectWS();
-        };
+        // Bootstrap initial connections on document ready state mount
+        window.onload = () => connectWebSocket();
     </script>
 </body>
 

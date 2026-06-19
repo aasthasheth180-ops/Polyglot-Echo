@@ -1,120 +1,138 @@
 # backend/llm_engine.py
 import os
-import time
-from dotenv import load_dotenv
-load_dotenv()
-
 from google import genai
 
+# Explicit language names mapping dictionary helper
 LANGUAGE_NAMES = {
-    "en": "English", "hi": "Hindi", "es": "Spanish",
-    "fr": "French",  "de": "German", "zh": "Chinese",
-    "ja": "Japanese", "pt": "Portuguese", "ru": "Russian",
-    "ar": "Arabic",  "gu": "Gujarati"
+    "en": "English",
+    "hi": "Hindi",
+    "gu": "Gujarati",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German"
 }
 
-SYSTEM_TEMPLATE = """You are Polyglot Echo, a high-performance multilingual voice assistant.
+# ── 🎯 Native Memory Class (Replaces LangChain ConversationBufferMemory) ──
+class LocalConversationMemory:
+    def __init__(self):
+        self.history = []
 
-CRITICAL: Respond ONLY in {target_language}. Never switch languages under any circumstances.
-Keep responses short (exactly 2-3 sentences) — this is a voice interface.
-Be natural, friendly, and conversational. Never use bullet points, lists, or markdown stars.
+    @property
+    def buffer(self) -> str:
+        """Formats the history array into a text string matching LangChain's buffer format."""
+        if not self.history:
+            return ""
+        return "\n".join([f"{msg['role']}: {msg['text']}" for msg in self.history])
 
-Conversation History so far:
-{history}
+    def save_context(self, inputs: dict, outputs: dict):
+        # inputs typically {"input": "user text"}, outputs typically {"output": "ai response"}
+        self.history.append({"role": "Human", "text": inputs.get("input", "")})
+        self.history.append({"role": "AI", "text": outputs.get("output", "")})
+        
+        # Keep a sliding window of the last 10 exchanges to keep prompt tokens bounded
+        if len(self.history) > 20:
+            self.history = self.history[-20:]
 
-User said: {input}
-Your response in {target_language}:"""
 
 class LLMEngine:
     def __init__(self):
-        # Explicitly targets the new official Google GenAI standard
-        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-        # Per-session active history vault: {session_id: [{"user": "...", "assistant": "..."}]}
-        self._memories = {}
-        print("[✓] LLM Engine: Gemini + Native Sliding-Window Memory Online")
+        # Initializes the native Google GenAI client object structure
+        api_key = os.getenv("GEMINI_API_KEY")
+        self.client = genai.Client(api_key=api_key)
+        self.sessions = {}
 
-    def _get_history_buffer(self, session_id: str, k: int = 5) -> str:
-        """Keeps only the last k turns of the conversation to prevent context bloat."""
-        if session_id not in self._memories:
-            self._memories[session_id] = []
-        
-        # Slice to get only the last 'k' interactions
-        recent_turns = self._memories[session_id][-k:]
-        
-        if not recent_turns:
-            return "No previous context."
-            
-        formatted_history = []
-        for turn in recent_turns:
-            formatted_history.append(f"User: {turn['user']}")
-            formatted_history.append(f"Assistant: {turn['assistant']}")
-            
-        return "\n".join(formatted_history)
+    def _get_memory(self, session_id: str) -> LocalConversationMemory:
+        if session_id not in self.sessions:
+            self.sessions[session_id] = LocalConversationMemory()
+        return self.sessions[session_id]
+
+    def clear_session(self, session_id: str):
+        if session_id in self.sessions:
+            del self.sessions[session_id]
+            print(f"[Memory] Cleared context memory footprint for session={session_id[:8]}")
 
     def generate(self, user_text: str, target_lang: str, session_id: str = "default") -> dict:
-        start = time.time()
+        """Standard non-streaming generation for HTTP REST endpoints."""
+        import time
+        t_start = time.time()
+        
         lang_name = LANGUAGE_NAMES.get(target_lang, "English")
-        
-        # Pull the history formatted strings directly from our native sliding matrix
-        history_buffer = self._get_history_buffer(session_id, k=5)
-        
-        prompt = SYSTEM_TEMPLATE.format(
-            target_language=lang_name,
-            history=history_buffer,
-            input=user_text
-        )
+        memory = self._get_memory(session_id)
+        history_text = memory.buffer if memory.buffer else "No previous conversation."
+
+        prompt = f"""You are Polyglot Echo, a multilingual voice assistant.
+CRITICAL RULES:
+1. Respond ONLY in {lang_name}
+2. Keep response to 2-3 sentences MAXIMUM
+3. NEVER repeat what was said before
+4. Answer ONLY the current question below
+5. Do NOT include the question in your answer
+
+Previous conversation (for context only — do NOT repeat it):
+{history_text}
+
+Current question (answer THIS and only this):
+{user_text}
+
+Your fresh response in {lang_name}:"""
 
         response = self.client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=prompt
+            contents=prompt,
+            config={
+                "temperature": 0.3,
+                "max_output_tokens": 150
+            }
         )
-        response_text = response.text.strip()
-
-        # Append current interaction turn straight to internal memory list state
-        self._memories[session_id].append({
-            "user": user_text,
-            "assistant": response_text
-        })
-
-        latency_ms = int((time.time() - start) * 1000)
-        print(f"[LLM Memory Node] ({target_lang}): '{response_text[:50]}...' | {latency_ms}ms")
-        return {"text": response_text, "latency_ms": latency_ms}
+        
+        ai_text = response.text.strip() if response.text else ""
+        memory.save_context({"input": user_text}, {"output": ai_text})
+        
+        return {
+            "text": ai_text,
+            "latency_ms": int((time.time() - t_start) * 1000)
+        }
 
     async def generate_stream(self, user_text: str, target_lang: str, session_id: str = "default"):
-        """
-        Asynchronous generator streaming back text tokens from Gemini 
-        while preserving sliding memory buffers.
-        """
+        """Asynchronous token-yielding stream iteration framework."""
         lang_name = LANGUAGE_NAMES.get(target_lang, "English")
-        history_buffer = self._get_history_buffer(session_id, k=5)
+        memory    = self._get_memory(session_id)
+        history_text = memory.buffer if memory.buffer else "No previous conversation."
+
+        prompt = f"""You are Polyglot Echo, a multilingual voice assistant.
+CRITICAL RULES:
+1. Respond ONLY in {lang_name}
+2. Keep response to 2-3 sentences MAXIMUM
+3. NEVER repeat what was said before
+4. Answer ONLY the current question below
+5. Do NOT include the question in your answer
+
+Previous conversation (for context only — do NOT repeat it):
+{history_text}
+
+Current question (answer THIS and only this):
+{user_text}
+
+Your fresh response in {lang_name}:"""
+
+        full_response = ""
         
-        prompt = SYSTEM_TEMPLATE.format(
-            target_language=lang_name,
-            history=history_buffer,
-            input=user_text
-        )
-
-        # Uses the streaming engine endpoint for low-latency generation
-        response_stream = self.client.models.generate_content_stream(
+        response = self.client.models.generate_content_stream(
             model="gemini-2.5-flash",
-            contents=prompt
+            contents=prompt,
+            config={
+                "temperature": 0.3,      
+                "max_output_tokens": 150  
+            }
         )
-
-        full_response_text = ""
-        for chunk in response_stream:
+        
+        for chunk in response:
             if chunk.text:
-                full_response_text += chunk.text
+                full_response += chunk.text
                 yield chunk.text
 
-        # Append the complete structured memory track once the stream ends
-        self._memories[session_id].append({
-            "user": user_text,
-            "assistant": full_response_text.strip()
-        })
+        memory.save_context({"input": user_text}, {"output": full_response})
 
-    def clear_session(self, session_id: str):
-        if session_id in self._memories:
-            del self._memories[session_id]
-            print(f"🧹 [LLM Memory Node] Purged context history window for session: {session_id[:8]}")
 
+# ── CRITICAL INSTANTIATION UNIT EXPORT ──────────────────────────
 llm_engine = LLMEngine()
