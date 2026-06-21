@@ -21,6 +21,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # ── Copy source code ───────────────────────────────────────────
 COPY . .
 
-# ── DO NOT hardcode port — Railway injects $PORT at runtime ────
-# Use shell form CMD (not exec form) so $PORT variable expands
-CMD uvicorn main:app --host 0.0.0.0 --port $PORT
+# ── Copy and make entrypoint script executable ─────────────────
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# ── Use entrypoint script to handle Railway's $PORT injection ──
+# This explicitly validates and passes $PORT to Uvicorn
+ENTRYPOINT ["/app/entrypoint.sh"]
