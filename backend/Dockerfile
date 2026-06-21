@@ -23,4 +23,4 @@ COPY . .
 
 # ── DO NOT hardcode port — Railway injects $PORT at runtime ────
 # Use shell form CMD (not exec form) so $PORT variable expands
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD uvicorn main:app --host 0.0.0.0 --port $PORT
