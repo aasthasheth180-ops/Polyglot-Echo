@@ -17,7 +17,7 @@ from pipeline import process_audio_loop
 from llm_engine import llm_engine
 from ai_client import check_colab_health, synthesize_speech, wait_for_hf_space_ready
 from stream_handler import handle_voice_stream
-from pipeline.models import create_tables
+from pipeline_events.models import create_tables
 
 # 1. Initialize database schema tables on framework startup
 create_tables()
