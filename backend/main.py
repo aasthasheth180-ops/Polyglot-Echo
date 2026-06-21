@@ -14,7 +14,7 @@ load_dotenv()
 # Internal imports
 from backend.pipeline import process_audio_loop
 from backend.llm_engine import llm_engine
-from backend.ai_client import check_colab_health, synthesize_speech
+from backend.ai_client import check_colab_health, synthesize_speech, wait_for_hf_space_ready  # 🎯 Added professor's client hook
 from pipeline.models import create_tables
 from backend.stream_handler import handle_voice_stream
 
@@ -24,6 +24,18 @@ create_tables()
 # 2. Instantiate the core FastAPI application object FIRST
 app = FastAPI(title="Polyglot Echo", version="2.0")
 
+# ── 🎯 Professor's Warmup Check Event ──────────────────────────
+@app.on_event("startup")
+async def startup_event():
+    """Verify HF Space is ready before accepting requests."""
+    print("[Backend] Checking if Hugging Face Space is initialized...")
+    space_ready = wait_for_hf_space_ready(max_attempts=30, delay_between_checks=2)
+    if not space_ready:
+        print("[Backend] ⚠️  HF Space still initializing. Requests may fail initially.")
+    else:
+        print("[Backend] ✅ HF Space ready. Backend online.")
+
+
 # 3. Add global network middleware configurations
 app.add_middleware(
     CORSMiddleware,
@@ -32,7 +44,7 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-# ── 🎯 Data Models for REST Injections ────────────────────────
+# ── Data Models for REST Injections ────────────────────────────
 class TextRequest(BaseModel):
     text:            str
     target_lang:     str = "en"
