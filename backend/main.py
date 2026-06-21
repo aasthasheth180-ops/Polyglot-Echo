@@ -12,11 +12,12 @@ from pydantic import BaseModel
 load_dotenv()
 
 # Internal imports
-from backend.pipeline import process_audio_loop
-from backend.llm_engine import llm_engine
-from backend.ai_client import check_colab_health, synthesize_speech, wait_for_hf_space_ready  # 🎯 Added professor's client hook
+# Change your imports to this if Python throws an error:
+from pipeline import process_audio_loop
+from llm_engine import llm_engine
+from ai_client import check_colab_health, synthesize_speech, wait_for_hf_space_ready
+from stream_handler import handle_voice_stream
 from pipeline.models import create_tables
-from backend.stream_handler import handle_voice_stream
 
 # 1. Initialize database schema tables on framework startup
 create_tables()
