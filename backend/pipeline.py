@@ -10,9 +10,9 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-from backend.ai_client import transcribe_audio, synthesize_speech, check_colab_health
-from backend.llm_engine import llm_engine
-from backend.cache import get_cached_audio, set_cached_audio
+from ai_client import transcribe_audio, synthesize_speech, check_colab_health
+from llm_engine import llm_engine
+from cache import get_cached_audio, set_cached_audio
 from pipeline.kafka_producer import emit_event, flush
 
 AASTHA_REF_TEXT = "Hey, how have you been lately? It feels like it has been forever."
