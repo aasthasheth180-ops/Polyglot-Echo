@@ -7,8 +7,8 @@ import soundfile as sf
 import librosa
 import scipy.signal as signal
 from fastapi import WebSocket, WebSocketDisconnect
-from backend.ai_client import transcribe_audio, synthesize_speech
-from backend.llm_engine import llm_engine
+from ai_client import transcribe_audio, synthesize_speech
+from llm_engine import llm_engine
 
 # ── Constants (SYSTEMATIC FIXES APPLIED) ──────────────────────
 SAMPLE_RATE        = 16000   
