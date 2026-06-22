@@ -32,9 +32,11 @@ app = FastAPI(title="Polyglot Echo", version="2.0")
 # ── 3. Add global network middleware configurations ────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allows your frontend platform to talk to the backend
+    allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
+    expose_headers=["X-Response-Text", "X-Latency-Total-MS"]  # Crucial for reading pipeline performance!
 )
 
 # ── Data Models for REST Injections ────────────────────────────
