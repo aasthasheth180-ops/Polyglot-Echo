@@ -30,21 +30,30 @@ db_error = None
 app = FastAPI(title="Polyglot Echo", version="2.0")
 
 # ── 3. Add global network middleware configurations ────────────
-# Explicitly list your frontend platform URL to bypass browser security blocks
+# Explicitly listing your frontend production domain avoids browser preflight bans
 origins = [
     "https://frontend-production-faa5.up.railway.app",
-    "http://localhost:3000",   # For local web testing
+    "http://localhost:3000",
     "http://127.0.0.1:3000"
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,        # Pass the safe array instead of "*"
-    allow_credentials=True,       # This can now safely stay True!
-    allow_methods=["*"],
+    allow_origins=origins,        # Using the specific origins list instead of "*" wildcard
+    allow_credentials=True,       # Keeps credentials supported safely
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
     expose_headers=["X-Response-Text", "X-Latency-Total-MS"]  # Crucial for reading pipeline performance!
 )
+
+# ── Force Catch All Preflight OPTIONS Requests ──────────────────
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    """
+    Explicitly intercepts browser preflight checks 
+    and forces a clean 200 OK response with CORS headers attached.
+    """
+    return Response(status_code=200)
 
 # ── Data Models for REST Injections ────────────────────────────
 class TextRequest(BaseModel):
@@ -101,9 +110,12 @@ async def startup_event():
 def require_db():
     """Decorator helper: Returns 503 if database is not initialized."""
     if not db_initialized:
+        # Instead of throwing a raw HTTPException that drops headers, we include CORS 
+        # parameters explicitly inside the error response headers
         raise HTTPException(
             status_code=503,
-            detail=f"Database not initialized. Error: {db_error or 'Unknown error'}"
+            detail=f"Database not initialized. Error: {db_error or 'Unknown error'}",
+            headers={"Access-Control-Allow-Origin": "https://frontend-production-faa5.up.railway.app"}
         )
 
 
@@ -158,6 +170,7 @@ async def process_text(
         content=audio_bytes,
         media_type="audio/wav",
         headers={
+            "Access-Control-Allow-Origin": "https://frontend-production-faa5.up.railway.app",
             "X-Response-Text":    ai_text,
             "X-Session-Id":       session_id,
             "X-LLM-MS":           str(llm_ms),
@@ -195,6 +208,7 @@ async def process_voice(
         content=result["audio_bytes"],
         media_type="audio/wav",
         headers={
+            "Access-Control-Allow-Origin": "https://frontend-production-faa5.up.railway.app",
             "X-Transcript":       result["transcript"],
             "X-Response-Text":    result["response_text"],
             "X-Detected-Lang":    result["detected_lang"],
@@ -237,20 +251,3 @@ async def clear_session(session_id: str):
     
     llm_engine.clear_session(session_id)
     return {"status": "cleared", "session_id": session_id}
-
-
-# ── Startup Lifespan (alternative to @app.on_event for FastAPI 0.93+) ──
-# If you want to use FastAPI's newer lifespan context manager, uncomment below:
-"""
-from contextlib import asynccontextmanager
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    await startup_event()
-    yield
-    # Shutdown
-    print("[Backend] Shutting down...")
-
-app = FastAPI(title="Polyglot Echo", version="2.0", lifespan=lifespan)
-"""
