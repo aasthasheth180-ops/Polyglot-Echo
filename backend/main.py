@@ -30,11 +30,11 @@ app = FastAPI(title="Polyglot Echo", version="2.0")
 
 # ── 3. Professor's Exact CORS Configuration (Fixed Wildcard Bug) ──
 origins = [
-    "https://frontend-production-faa5.up.railway.app",  # Your exact frontend URL
-    "http://localhost:3000",                            # local dev
+    "https://polyglot-echo-production.up.railway.app",  # <--- Update this to match your real URL
+    "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://localhost:8501",                            # streamlit local
-    "null"                                              # file:// HTML files
+    "http://localhost:8501",
+    "null"
 ]
 
 app.add_middleware(
@@ -69,8 +69,8 @@ app.add_middleware(
 # ── Professor's Explicit OPTIONS Handler (Fixed for Credentials) ──
 @app.options("/{full_path:path}")
 async def options_handler(request: Request, full_path: str):
-    # Dynamically echo back the incoming origin to satisfy allow_credentials=True
-    origin = request.headers.get("Origin", "https://frontend-production-faa5.up.railway.app")
+    # Update this line to your current production URL
+    origin = request.headers.get("Origin", "https://polyglot-echo-production.up.railway.app")
     return Response(
         status_code=200,
         headers={
