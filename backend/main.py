@@ -1,43 +1,37 @@
 import os
 import uuid
 import time
-import asyncio
 from typing import Optional
-from fastapi import FastAPI, UploadFile, File, Form, Response, Header, Request
+from fastapi import FastAPI, UploadFile, File, Form, Response, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-# Internal imports (Ensure these files exist in your repo)
+# Internal imports
 from pipeline import process_audio_loop
 from llm_engine import llm_engine
-from ai_client import check_colab_health, synthesize_speech, wait_for_hf_space_ready
-from models import create_tables
+from ai_client import synthesize_speech
 
-# ── Setup ──────────────────────────────────────────────────────
 app = FastAPI(title="Polyglot Echo", version="2.0")
 PRODUCTION_URL = "https://polyglot-echo-production.up.railway.app"
 
 # ── CORS Middleware ────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[PRODUCTION_URL, "http://localhost:3000", "null"],
+    allow_origins=["*"], # Using * is safer for troubleshooting right now
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"]
 )
 
-# ── CORS Helper ────────────────────────────────────────────────
 def get_cors_headers():
     return {
-        "Access-Control-Allow-Origin": PRODUCTION_URL,
-        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Origin": "*",
         "Access-Control-Expose-Headers": "X-Transcript, X-Response-Text, X-Detected-Lang, X-Session-Id, X-Whisper-MS, X-LLM-MS, X-TTS-MS, X-Latency-Total-MS, X-Speaker-Profile"
     }
 
 # ── API Endpoints ──────────────────────────────────────────────
-
 class TextRequest(BaseModel):
     text: str
     target_lang: str = "en"
@@ -93,6 +87,5 @@ async def process_voice(
     })
     return Response(content=result["audio_bytes"], media_type="audio/wav", headers=headers)
 
-# ── Static File Mounting ───────────────────────────────────────
-# Place this at the very end. Ensure index.html exists in your root folder.
-app.mount("/", StaticFiles(directory=".", html=True), name="static")
+# Serve the frontend
+app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
