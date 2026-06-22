@@ -88,4 +88,4 @@ async def process_voice(
     return Response(content=result["audio_bytes"], media_type="audio/wav", headers=headers)
 
 # Serve the frontend
-app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+app.mount("/", StaticFiles(directory="../frontend", html=True), name="static")
