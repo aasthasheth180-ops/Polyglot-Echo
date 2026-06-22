@@ -11,3 +11,4 @@ numpy
 scipy
 matplotlib
 kafka-python
+psycopg2-binary==2.9.9
