@@ -30,10 +30,17 @@ db_error = None
 app = FastAPI(title="Polyglot Echo", version="2.0")
 
 # ── 3. Add global network middleware configurations ────────────
+# Explicitly list your frontend platform URL to bypass browser security blocks
+origins = [
+    "https://frontend-production-faa5.up.railway.app",
+    "http://localhost:3000",   # For local web testing
+    "http://127.0.0.1:3000"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows your frontend platform to talk to the backend
-    allow_credentials=True,
+    allow_origins=origins,        # Pass the safe array instead of "*"
+    allow_credentials=True,       # This can now safely stay True!
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["X-Response-Text", "X-Latency-Total-MS"]  # Crucial for reading pipeline performance!
