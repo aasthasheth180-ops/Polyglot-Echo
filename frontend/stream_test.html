@@ -4,341 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Polyglot Echo — Realtime Console</title>
-    <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        }
-
-        body {
-            background: #1A202C;
-            color: #E2E8F0;
-            padding: 30px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-        }
-
-        .container {
-            width: 100%;
-            max-width: 800px;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-
-        header {
-            text-align: center;
-            margin-bottom: 10px;
-        }
-
-        header h1 {
-            color: #3182CE;
-            margin-bottom: 6px;
-            font-size: 2.2rem;
-        }
-
-        header p {
-            color: #A0AEC0;
-            font-size: 0.95rem;
-        }
-
-        .control-panel {
-            background: #2D3748;
-            border-radius: 16px;
-            padding: 20px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 20px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            border: 1px solid #4A5568;
-        }
-
-        .control-group {
-            flex: 1;
-            min-width: 180px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .control-group label {
-            font-size: 0.85rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: #CBD5E0;
-            font-weight: 600;
-        }
-
-        .control-group select {
-            background: #1A202C;
-            color: white;
-            border: 1px solid #4A5568;
-            border-radius: 8px;
-            padding: 10px;
-            font-size: 0.95rem;
-            outline: none;
-            cursor: pointer;
-        }
-
-        .chat-display {
-            background: #2D3748;
-            border-radius: 16px;
-            height: 350px;
-            overflow-y: auto;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-            border: 1px solid #4A5568;
-        }
-
-        .bubble {
-            max-width: 75%;
-            padding: 12px 16px;
-            border-radius: 14px;
-            font-size: 0.95rem;
-            line-height: 1.4;
-            position: relative;
-            animation: fadeIn 0.2s ease-in-out;
-        }
-
-        .bubble.user {
-            background: #3182CE;
-            color: white;
-            align-self: flex-end;
-            border-bottom-right-radius: 2px;
-        }
-
-        .bubble.ai {
-            background: #4A5568;
-            color: #F7FAFC;
-            align-self: flex-start;
-            border-bottom-left-radius: 2px;
-            border-left: 4px solid #48BB78;
-        }
-
-        .bubble-meta {
-            font-size: 0.7rem;
-            color: #A0AEC0;
-            margin-top: 4px;
-            display: block;
-            text-align: right;
-        }
-
-        .mic-area {
-            background: #2D3748;
-            border-radius: 16px;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            border: 1px solid #4A5568;
-            min-height: 140px;
-            position: relative;
-        }
-
-        .mic-btn {
-            width: 64px;
-            height: 64px;
-            border-radius: 50%;
-            background: #E53E3E;
-            border: none;
-            font-size: 1.8rem;
-            color: white;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 0 0 0 rgba(229, 62, 62, 0.7);
-            transition: transform 0.1s, background 0.2s;
-            user-select: none;
-        }
-
-        .mic-btn:active {
-            transform: scale(0.92);
-            background: #C53030;
-        }
-
-        .mic-btn.recording {
-            animation: pulse 1.5s infinite;
-            background: #C53030;
-        }
-
-        .mic-hint {
-            font-size: 0.85rem;
-            color: #A0AEC0;
-            margin-top: 10px;
-            font-weight: 500;
-        }
-
-        #waveCanvas {
-            width: 100%;
-            height: 40px;
-            margin-bottom: 12px;
-            display: none;
-        }
-
-        .status-bar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 4px 10px;
-            font-size: 0.8rem;
-            color: #718096;
-        }
-
-        .status-indicator {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #718096;
-        }
-
-        .dot.online {
-            background: #48BB78;
-            animation: blink 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% {
-                box-shadow: 0 0 0 0 rgba(229, 62, 62, 0.7);
-            }
-
-            70% {
-                box-shadow: 0 0 0 15px rgba(229, 62, 62, 0);
-            }
-
-            100% {
-                box-shadow: 0 0 0 0 rgba(229, 62, 62, 0);
-            }
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(5px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        @keyframes blink {
-
-            0%,
-            100% {
-                opacity: 0.5;
-            }
-
-            50% {
-                opacity: 1;
-            }
-        }
-    </style>
+    <title>Polyglot Echo — Production Console</title>
 </head>
 
 <body>
-
-    <div class="container">
-        <header>
-            <h1>Polyglot Echo</h1>
-            <p>Real-time Multilingual Conversational Streaming Platform</p>
-        </header>
-
-        <div class="control-panel">
-            <div class="control-group">
-                <label for="langSelect">Target Language</label>
-                <select id="langSelect">
-                    <option value="en">English (US)</option>
-                    <option value="hi">Hindi (हिन्दी)</option>
-                    <option value="gu">Gujarati (ગુજરાતી)</option>
-                    <option value="es">Spanish (Español)</option>
-                    <option value="fr">French (Français)</option>
-                    <option value="de">German (Deutsch)</option>
-                </select>
-            </div>
-            <div class="control-group">
-                <label for="profileSelect">Speaker Profile (Voice)</label>
-                <select id="profileSelect">
-                    <option value="aastha">Aastha Clone (Tuned)</option>
-                    <option value="default">System Default Voice</option>
-                    <option value="guest">Guest Profile (On-the-fly)</option>
-                </select>
-            </div>
-        </div>
-
-        <div class="chat-display" id="chatDisplay">
-            <div class="bubble ai">
-                Hello! I am Polyglot Echo. Press and hold the microphone icon to stream audio, or type out your message
-                directly below!
-                <span class="bubble-meta">System Welcome</span>
-            </div>
-        </div>
-
-        <div class="mic-area">
-            <canvas id="waveCanvas"></canvas>
-
-            <div style="display:flex; gap:8px; width:100%; max-width:600px; margin-bottom:14px;">
-                <input type="text" id="textInput" placeholder="Type a message or hold mic to speak..."
-                    style="flex:1; background:#1A202C; color:#E2E8F0; border:1px solid #4A5568; border-radius:12px; padding:12px 16px; font-size:0.95rem; outline:none;"
-                    onkeydown="if(event.key==='Enter') sendTextMessage()" />
-                <button onclick="sendTextMessage()"
-                    style="background:#3182CE; color:white; border:none; border-radius:12px; padding:0 20px; cursor:pointer; font-size:0.95rem; font-weight:600; transition: background 0.2s;"
-                    onmouseover="this.style.background='#2B6CB0'" onmouseout="this.style.background='#3182CE'">
-                    Send
-                </button>
-            </div>
-
-            <div style="display:flex; align-items:center; gap:16px; margin-bottom:12px;">
-                <button class="mic-btn" id="micBtn" onmousedown="startRecording()" onmouseup="stopRecording()"
-                    ontouchstart="startRecording(event)" ontouchend="stopRecording()">
-                    🎤
-                </button>
-                <span class="mic-hint" id="micHint">Hold to speak — release to send</span>
-            </div>
-
-            <div id="guestSetup" style="display:none; width:100%; max-width:600px; margin-top:6px;">
-                <div style="background:#2D3748; border-radius:12px; padding:16px; border:1px solid #F6AD55;">
-                    <p style="color:#F6AD55; font-size:0.85rem; margin-bottom:12px; font-weight:600;">
-                        ⚠️ Guest profile active — record your vocal sample first
-                    </p>
-                    <div style="display:flex; align-items:center; gap:12px;">
-                        <button onclick="recordGuestVoice()" id="guestRecordBtn"
-                            style="background:#1A202C; color:#E2E8F0; border:1px solid #4A5568; border-radius:8px; padding:10px 16px; cursor:pointer; font-size:0.85rem; font-weight:500;">
-                            🎙️ Record 10s voice reference
-                        </button>
-                        <span id="guestStatus" style="font-size:0.85rem; color:#A0AEC0;">
-                            Not recorded yet
-                        </span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="status-bar">
-            <div class="status-indicator">
-                <div class="dot online" id="statusDot"></div>
-                <span id="statusText">Connecting to Production Server...</span>
-            </div>
-            <div id="sessionDisplay">Session: initializing...</div>
-        </div>
-    </div>
-
     <script>
+        // ── FIX 3: Configuration with secure production URLs ─────────
         // ── Configuration — change these when URLs change ─────────────
         const CONFIG = {
             // Your Railway backend URL (no trailing slash)
@@ -347,27 +18,17 @@
             BACKEND_WS: 'wss://polyglot-echo-production.up.railway.app',
         };
 
-        // ── Persistent Runtime Session State Properties ─────────────────
         const sessionId = 'session_' + Math.random().toString(36).substring(2, 11);
         document.getElementById('sessionDisplay').textContent = `Session: ${sessionId.substring(8)}`;
 
         let ws = null;
-        let mediaRecorder = null;
-        let audioContext = null;
-        let audioQueue = [];
-        let isPlaying = false;
-        let guestVoiceReady = false;
 
-        // Canvas Visualization context setup pointers
-        const canvas = document.getElementById('waveCanvas');
-        const canvasCtx = canvas.getContext('2d');
-
-        // ── WebSocket Gateway Connection Initializer ─────────────────────
+        // ── Updated WebSocket Connector ─────────────────────────────
         function connectWebSocket() {
             const lang = document.getElementById('langSelect').value;
             const profile = document.getElementById('profileSelect').value;
 
-            // Connected using dynamic CONFIG pattern
+            // Use the secure WSS URL from CONFIG
             const wsUrl = `${CONFIG.BACKEND_WS}/ws/stream-audio?target_lang=${lang}&speaker_profile=${profile}&session_id=${sessionId}`;
 
             if (ws) { ws.close(); }
@@ -375,83 +36,23 @@
             ws = new WebSocket(wsUrl);
             ws.binaryType = 'arraybuffer';
 
-            ws.onopen = () => {
-                document.getElementById('statusText').textContent = 'Live Audio Channel Sync Connected';
-                document.getElementById('statusDot').className = 'dot online';
-            };
-
-            ws.onmessage = async (event) => {
-                if (event.data instanceof ArrayBuffer) {
-                    audioQueue.push(event.data);
-                    playNextChunk();
-                } else {
-                    const data = JSON.parse(event.data);
-
-                    if (data.type === 'transcript_interim') {
-                        document.getElementById('textInput').placeholder = `Heard: "${data.text}"`;
-                    } else if (data.type === 'llm_chunk') {
-                        addBubble('ai', data.text, 'Streaming Token Chunk');
-                    } else if (data.type === 'response_done') {
-                        console.log('[Pipeline Stream Finish]:', data.full_response);
-                    }
-                }
-            };
-
-            ws.onclose = () => {
-                document.getElementById('statusText').textContent = 'Disconnected — Reconnecting...';
-                document.getElementById('statusDot').className = 'dot';
-                setTimeout(connectWebSocket, 3000);
-            };
+            // ... (keep your existing ws.onopen, ws.onmessage, ws.onclose logic) ...
         }
 
-        // ── Optimized High-Performance Parallelized Audio Buffer Runner ──
-        async function playNextChunk() {
-            if (isPlaying || audioQueue.length === 0) return;
-            isPlaying = true;
-
-            const chunk = audioQueue.shift();
-            try {
-                if (!audioContext) {
-                    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-                }
-                if (audioContext.state === 'suspended') await audioContext.resume();
-
-                const decoded = await audioContext.decodeAudioData(chunk.slice(0));
-                const source = audioContext.createBufferSource();
-                source.buffer = decoded;
-                source.connect(audioContext.destination);
-
-                source.onended = () => {
-                    isPlaying = false;
-                    setTimeout(playNextChunk, 0);
-                };
-                source.start(0);
-
-                if (audioQueue.length > 0) {
-                    audioContext.decodeAudioData(audioQueue[0].slice(0)).catch(() => { });
-                }
-            } catch (e) {
-                console.warn('[Audio Framework Pipeline Exception]:', e);
-                isPlaying = false;
-                setTimeout(playNextChunk, 20);
-            }
-        }
-
-        // ── HTTP Text Input Handler Processing Endpoint ──────────────────
+        // ── Updated HTTP Text Message Handler ───────────────────────
         async function sendTextMessage() {
             const input = document.getElementById('textInput');
             const text = input.value.trim();
             if (!text) return;
 
             input.value = '';
-            addBubble('user', `✏️ ${text}`, 'Text Input Input');
+            addBubble('user', `✏️ ${text}`, 'Text Input');
 
             const lang = document.getElementById('langSelect').value;
             const profile = document.getElementById('profileSelect').value;
-            const status = document.getElementById('statusText');
 
             try {
-                status.textContent = 'Processing text matrix pipeline...';
+                // Use the secure HTTPS URL from CONFIG
                 const resp = await fetch(`${CONFIG.BACKEND_HTTP}/api/process-text`, {
                     method: 'POST',
                     headers: {
@@ -465,192 +66,25 @@
                     })
                 });
 
-                if (!resp.ok) throw new Error(`HTTP System Fault Status: ${resp.status}`);
+                if (!resp.ok) throw new Error(`Server Status: ${resp.status}`);
 
-                const aiText = resp.headers.get('X-Response-Text') || '';
+                const aiText = resp.headers.get('X-Response-Text') || 'Processing...';
                 const totalMs = resp.headers.get('X-Latency-Total-MS') || '?';
                 const audioBlob = await resp.blob();
 
-                addBubble('ai', `🔊 ${aiText}`, `Total Processing Trace: ${totalMs}ms`);
+                addBubble('ai', `🔊 ${aiText}`, `Latency: ${totalMs}ms`);
 
                 const arrayBuf = await audioBlob.arrayBuffer();
                 audioQueue.push(arrayBuf);
                 playNextChunk();
 
-                status.textContent = 'Live Audio Channel Sync Connected';
             } catch (e) {
                 console.error('[REST Transmission Pipeline Failure]:', e);
-                addBubble('ai', '❌ Connection pipeline processing layout timeout. Check backend logs.', 'Error');
-                status.textContent = 'Live Audio Channel Sync Connected';
+                addBubble('ai', '❌ Connection error. Check console.', 'Error');
             }
         }
 
-        // ── Audio Streaming Capture Handlers ─────────────────────────────
-        async function startRecording(e) {
-            if (e) e.preventDefault();
-
-            audioQueue = [];
-            document.getElementById('textInput').placeholder = 'Streaming speech...';
-
-            const btn = document.getElementById('micBtn');
-            btn.className = 'mic-btn recording';
-            canvas.style.display = 'block';
-
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-
-                mediaRecorder.ondataavailable = (event) => {
-                    if (event.data.size > 0 && ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(event.data);
-                    }
-                };
-
-                mediaRecorder.start(100);
-                setupVisualizer(stream);
-            } catch (err) {
-                console.error('[Microphone Capture Exception Check]:', err);
-                stopRecording();
-            }
-        }
-
-        function stopRecording() {
-            const btn = document.getElementById('micBtn');
-            btn.className = 'mic-btn';
-            canvas.style.display = 'none';
-            document.getElementById('textInput').placeholder = 'Type a message or hold mic to speak...';
-
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                mediaRecorder.stop();
-                mediaRecorder.stream.getTracks().forEach(track => track.stop());
-            }
-        }
-
-        // ── On-the-fly Guest Audio Template Verification ─────────────────
-        async function recordGuestVoice() {
-            const btn = document.getElementById('guestRecordBtn');
-            const status = document.getElementById('guestStatus');
-
-            btn.textContent = '⏺️ Capturing structural fingerprint (10s)...';
-            btn.disabled = true;
-            status.textContent = 'Maintain active vocal pass...';
-
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                const chunks = [];
-                const mr = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-
-                mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-                mr.start(100);
-
-                await new Promise(r => setTimeout(r, 10000));
-                mr.stop();
-                stream.getTracks().forEach(t => t.stop());
-
-                await new Promise(r => setTimeout(r, 200));
-
-                const blob = new Blob(chunks, { type: 'audio/webm' });
-                const formData = new FormData();
-                formData.append('audio_file', blob, 'guest_ref.wav');
-                formData.append('target_lang', document.getElementById('langSelect').value);
-                formData.append('speaker_profile', 'guest');
-
-                status.textContent = 'Syncing network profile arrays...';
-
-                const resp = await fetch(`${CONFIG.BACKEND_HTTP}/api/process-voice`, {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (resp.ok) {
-                    guestVoiceReady = true;
-                    status.textContent = '✅ Profile Mounted Successfully';
-                    status.style.color = '#48BB78';
-                    btn.textContent = '🎙️ Re-record voice reference?';
-                    btn.disabled = false;
-
-                    document.getElementById('micBtn').disabled = false;
-                    document.getElementById('textInput').disabled = false;
-                    connectWebSocket();
-                } else {
-                    throw new Error('Endpoint reject signature profile layout.');
-                }
-            } catch (e) {
-                status.textContent = '❌ Target upload generation failed.';
-                btn.textContent = '🎙️ Record 10s voice reference';
-                btn.disabled = false;
-                console.error(e);
-            }
-        }
-
-        // UI Field Event Handlers
-        document.getElementById('profileSelect').addEventListener('change', function () {
-            const guestDiv = document.getElementById('guestSetup');
-            guestDiv.style.display = this.value === 'guest' ? 'block' : 'none';
-
-            if (this.value === 'guest' && !guestVoiceReady) {
-                document.getElementById('micBtn').disabled = true;
-                document.getElementById('textInput').disabled = true;
-            } else {
-                document.getElementById('micBtn').disabled = false;
-                document.getElementById('textInput').disabled = false;
-                connectWebSocket();
-            }
-        });
-
-        document.getElementById('langSelect').addEventListener('change', () => connectWebSocket());
-
-        // ── Interface Utility Helper Functions ───────────────────────────
-        function addBubble(sender, text, meta) {
-            const display = document.getElementById('chatDisplay');
-            const bubble = document.createElement('div');
-            bubble.className = `bubble ${sender}`;
-            bubble.textContent = text;
-
-            if (meta) {
-                const metaSpan = document.createElement('span');
-                metaSpan.className = 'bubble-meta';
-                metaSpan.textContent = meta;
-                bubble.appendChild(metaSpan);
-            }
-
-            display.appendChild(bubble);
-            display.scrollTop = display.scrollHeight;
-        }
-
-        function setupVisualizer(stream) {
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const analyser = audioCtx.createAnalyser();
-            const source = audioCtx.createMediaStreamSource(stream);
-            source.connect(analyser);
-
-            analyser.fftSize = 256;
-            const bufferLength = analyser.frequencyBinCount;
-            const dataArray = new Uint8Array(bufferLength);
-
-            function draw() {
-                if (canvas.style.display === 'none') return;
-                requestAnimationFrame(draw);
-
-                analyser.getByteFrequencyData(dataArray);
-                canvasCtx.fillStyle = '#2D3748';
-                canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
-
-                const barWidth = (canvas.width / bufferLength) * 2.5;
-                let barHeight;
-                let x = 0;
-
-                for (let i = 0; i < bufferLength; i++) {
-                    barHeight = dataArray[i] / 4;
-                    canvasCtx.fillStyle = `rgb(${barHeight + 100}, 50, 50)`;
-                    canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
-                    x += barWidth + 1;
-                }
-            }
-            draw();
-        }
-
-        // Bootstrap initial connections on document ready state mount
+        // ... (Keep the rest of your recording and helper logic) ...
         window.onload = () => connectWebSocket();
     </script>
 </body>
