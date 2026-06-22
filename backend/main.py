@@ -19,7 +19,7 @@ from ai_client import check_colab_health, synthesize_speech, wait_for_hf_space_r
 from stream_handler import handle_voice_stream
 
 # ── Database Import (but DON'T call create_tables yet) ────────
-from pipeline_events.models import create_tables, SessionLocal
+from models import create_tables, SessionLocal
 
 # ── Global Flag to Track DB Status ─────────────────────────────
 db_initialized = False
