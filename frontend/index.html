@@ -5,85 +5,84 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Polyglot Echo — Production Console</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+        }
+
+        #chat-container {
+            height: 300px;
+            border: 1px solid #ccc;
+            overflow-y: scroll;
+            margin-bottom: 10px;
+        }
+    </style>
 </head>
 
 <body>
+    <h1>Polyglot Echo Console</h1>
+    <div id="sessionDisplay">Session: Loading...</div>
+
+    <div>
+        <select id="langSelect">
+            <option value="en">English</option>
+            <option value="es">Spanish</option>
+            <option value="fr">French</option>
+        </select>
+        <select id="profileSelect">
+            <option value="default">Default Speaker</option>
+        </select>
+    </div>
+
+    <div id="chat-container"></div>
+    <input type="text" id="textInput" placeholder="Type something...">
+    <button onclick="sendTextMessage()">Send</button>
+
     <script>
-        // ── FIX 3: Configuration with secure production URLs ─────────
-        // ── Configuration — change these when URLs change ─────────────
         const CONFIG = {
             BACKEND_HTTP: 'https://polyglot-echo-production.up.railway.app',
             BACKEND_WS: 'wss://polyglot-echo-production.up.railway.app',
         };
 
         const sessionId = 'session_' + Math.random().toString(36).substring(2, 11);
-        document.getElementById('sessionDisplay').textContent = `Session: ${sessionId.substring(8)}`;
-
         let ws = null;
 
-        // ── Updated WebSocket Connector ─────────────────────────────
-        function connectWebSocket() {
-            const lang = document.getElementById('langSelect').value;
-            const profile = document.getElementById('profileSelect').value;
-
-            // Use the secure WSS URL from CONFIG
-            const wsUrl = `${CONFIG.BACKEND_WS}/ws/stream-audio?target_lang=${lang}&speaker_profile=${profile}&session_id=${sessionId}`;
-
-            if (ws) { ws.close(); }
-
-            ws = new WebSocket(wsUrl);
-            ws.binaryType = 'arraybuffer';
-
-            // ... (keep your existing ws.onopen, ws.onmessage, ws.onclose logic) ...
+        function addBubble(type, text, sub) {
+            const div = document.createElement('div');
+            div.innerHTML = `<strong>${type}:</strong> ${text} <small>(${sub})</small>`;
+            document.getElementById('chat-container').appendChild(div);
         }
 
-        // ── Updated HTTP Text Message Handler ───────────────────────
         async function sendTextMessage() {
             const input = document.getElementById('textInput');
             const text = input.value.trim();
             if (!text) return;
-
             input.value = '';
-            addBubble('user', `✏️ ${text}`, 'Text Input');
+            addBubble('user', text, 'Text Input');
 
             const lang = document.getElementById('langSelect').value;
             const profile = document.getElementById('profileSelect').value;
 
             try {
-                // Use the secure HTTPS URL from CONFIG
                 const resp = await fetch(`${CONFIG.BACKEND_HTTP}/api/process-text`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Session-Id': sessionId
-                    },
-                    body: JSON.stringify({
-                        text: text,
-                        target_lang: lang,
-                        speaker_profile: profile
-                    })
+                    headers: { 'Content-Type': 'application/json', 'X-Session-Id': sessionId },
+                    body: JSON.stringify({ text, target_lang: lang, speaker_profile: profile })
                 });
 
-                if (!resp.ok) throw new Error(`Server Status: ${resp.status}`);
+                if (!resp.ok) throw new Error(`Status: ${resp.status}`);
 
-                const aiText = resp.headers.get('X-Response-Text') || 'Processing...';
-                const totalMs = resp.headers.get('X-Latency-Total-MS') || '?';
-                const audioBlob = await resp.blob();
-
-                addBubble('ai', `🔊 ${aiText}`, `Latency: ${totalMs}ms`);
-
-                const arrayBuf = await audioBlob.arrayBuffer();
-                audioQueue.push(arrayBuf);
-                playNextChunk();
-
+                addBubble('ai', 'Processing complete', 'Success');
             } catch (e) {
-                console.error('[REST Transmission Pipeline Failure]:', e);
-                addBubble('ai', '❌ Connection error. Check console.', 'Error');
+                console.error(e);
+                addBubble('ai', 'Error connecting to backend', 'Error');
             }
         }
 
-        // ... (Keep the rest of your recording and helper logic) ...
-        window.onload = () => connectWebSocket();
+        window.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('sessionDisplay').textContent = `Session: ${sessionId.substring(8)}`;
+        });
     </script>
 </body>
 
