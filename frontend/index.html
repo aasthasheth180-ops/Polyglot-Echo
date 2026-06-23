@@ -1,109 +1,51 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 
 <head>
-    <meta charset="UTF-8">
-    <title>Polyglot Echo</title>
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
     <div class="main-wrapper">
-        <header>
-            <h1>Polyglot Echo</h1>
-            <p>Real-time Multilingual Conversational Streaming Platform</p>
-        </header>
-
-        <section class="controls-panel">
-            <div class="control-group">
-                <label>TARGET LANGUAGE</label>
-                <select id="langSelect">
-                    <option value="en">English (US)</option>
-                    <option value="es">Spanish</option>
-                    <option value="fr">French</option>
-                </select>
-            </div>
-            <div class="control-group">
-                <label>SPEAKER PROFILE (VOICE)</label>
-                <select id="profileSelect">
-                    <option value="aastha">Aastha Clone (Tuned)</option>
-                    <option value="guest">Guest Voice (Record New)</option>
-                </select>
-            </div>
-        </section>
-
-        <div id="chat-container">
-        </div>
-
-        <section class="input-area">
-            <button id="recordBtn">🎤 Hold to Record</button>
-            <input type="text" id="textInput" placeholder="Type a message or hold mic to speak...">
-            <button id="sendBtn" onclick="sendTextMessage()">Send</button>
-        </section>
+        <select id="langSelect">
+            <option value="en">English</option>
+        </select>
+        <select id="profileSelect">
+            <option value="guest">Guest</option>
+        </select>
+        <div id="chat-container"></div>
+        <input type="text" id="textInput">
+        <button onclick="sendTextMessage()">Send</button>
+        <button id="recordBtn">🎤 Hold to Record</button>
     </div>
     <script>
-        // 1. CONFIGURATION
-        const CONFIG = {
-            BACKEND_HTTP: 'https://polyglot-echo-production.up.railway.app'
-        };
+        const BACKEND = 'https://polyglot-echo-production.up.railway.app';
 
-        // 2. TEXT SENDING LOGIC
         async function sendTextMessage() {
-            const input = document.getElementById('textInput');
-            const text = input.value.trim();
-            if (!text) return;
-
-            // Add user message to UI
-            const chat = document.getElementById('chat-container');
-            chat.innerHTML += `<div style="margin: 10px; color: #4ade80;">You: ${text}</div>`;
-            input.value = '';
-
-            try {
-                const resp = await fetch(`${CONFIG.BACKEND_HTTP}/api/process-text`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        text: text,
-                        target_lang: document.getElementById('langSelect').value,
-                        speaker_profile: document.getElementById('profileSelect').value
-                    })
-                });
-                if (resp.ok) chat.innerHTML += `<div style="margin: 10px; color: #60a5fa;">AI: Response received.</div>`;
-            } catch (e) {
-                console.error(e);
-                chat.innerHTML += `<div style="margin: 10px; color: #f87171;">Error: Check backend logs.</div>`;
-            }
+            const text = document.getElementById('textInput').value;
+            await fetch(`${BACKEND}/api/process-text`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, target_lang: 'en', speaker_profile: 'aastha' })
+            });
         }
 
-        // 3. VOICE RECORDING LOGIC
-        let mediaRecorder;
-        let audioChunks = [];
-        const recordBtn = document.getElementById('recordBtn');
-
-        recordBtn.addEventListener('mousedown', async () => {
+        let mediaRecorder, audioChunks = [];
+        const btn = document.getElementById('recordBtn');
+        btn.onmousedown = async () => {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(stream);
-            audioChunks = [];
-            mediaRecorder.ondataavailable = (event) => audioChunks.push(event.data);
+            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
             mediaRecorder.start();
-            recordBtn.textContent = "🔴 Recording...";
-        });
-
-        recordBtn.addEventListener('mouseup', () => {
+        };
+        btn.onmouseup = () => {
             mediaRecorder.stop();
-            recordBtn.textContent = "🎤 Hold to Record";
             mediaRecorder.onstop = async () => {
-                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
                 const formData = new FormData();
-                formData.append("file", audioBlob, "guest_voice.wav");
-
-                await fetch(`${CONFIG.BACKEND_HTTP}/api/process-voice`, {
-                    method: 'POST',
-                    body: formData
-                });
-                alert("Voice recorded and sent for cloning!");
+                formData.append("file", new Blob(audioChunks));
+                await fetch(`${BACKEND}/api/process-voice`, { method: 'POST', body: formData });
             };
-        });
+        };
     </script>
 </body>
 
