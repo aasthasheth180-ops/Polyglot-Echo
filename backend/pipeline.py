@@ -11,9 +11,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Native direct imports
-from ai_client import transcribe_audio, synthesize_speech, check_colab_health
-from llm_engine import llm_engine
-from cache import get_cached_audio, set_cached_audio
+from backend.ai_client import transcribe_audio, synthesize_speech, check_colab_health
+from backend.llm_engine import llm_engine
+from backend.cache import get_cached_audio, set_cached_audio
 
 # ── FIXED LINE: We are now pointing to the unique folder name ──
 from pipeline_events.kafka_producer import emit_event, flush
