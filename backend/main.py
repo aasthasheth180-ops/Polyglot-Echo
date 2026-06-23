@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import FastAPI, UploadFile, File, Form, Response, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from backend.pipeline import process_audio_loop
 from backend.llm_engine import llm_engine
@@ -54,7 +54,10 @@ async def process_voice(file: UploadFile = File(...), target_lang: str = Form("e
     return Response(content=result["audio_bytes"], media_type="audio/wav")
 
 # --- Static Routing ---
-static_dir = "/app/static"
-@app.get("/")
-async def read_index(): return FileResponse(os.path.join(static_dir, "index.html"))
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+@app.get("/", response_class=HTMLResponse)
+async def read_index():
+    # This points to index.html in the same directory as main.py
+    html_path = os.path.join(os.path.dirname(__file__), "index.html")
+    with open(html_path, "r") as f:
+        return f.read()
