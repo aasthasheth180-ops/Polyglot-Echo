@@ -25,8 +25,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY backend/ /app/backend/
 
 # ── Copy frontend static files ─────────────────────────────────
+# ── Copy frontend static files ─────────────────────────────────
 RUN mkdir -p /app/static
-COPY frontend/ /app/static/
+# Change from 'frontend/' to 'backend/static/'
+COPY backend/static/ /app/static/
 
 # ── Copy entrypoint script ─────────────────────────────────────
 COPY entrypoint.sh /app/entrypoint.sh
