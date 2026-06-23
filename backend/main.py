@@ -107,14 +107,29 @@ async def process_text(
         )
         llm_ms = int((time.time() - llm_start) * 1000)
         
-        # Synthesize speech
+        # ── RETRY LOGIC FOR TTS ──
         tts_start = time.time()
-        audio_bytes = synthesize_speech(
-            text=llm_result["text"],
-            lang=request.target_lang,
-            speaker_profile=request.speaker_profile,
-            ref_text="Hey, how have you been lately?"
-        )
+        audio_bytes = None
+        
+        for attempt in range(3):
+            try:
+                audio_bytes = synthesize_speech(
+                    text=llm_result["text"],
+                    lang=request.target_lang,
+                    speaker_profile=request.speaker_profile,
+                    ref_text="Hey, how have you been lately?"
+                )
+                break # Success, exit the loop!
+            except Exception as e:
+                if "503" in str(e) and attempt < 2:
+                    print(f"[Retry] ⚠️ AI busy (503), attempt {attempt+1} failed. Retrying...")
+                    time.sleep(2) # Wait 2 seconds
+                    continue
+                else:
+                    # If it's not a 503, or we ran out of attempts, raise error
+                    print(f"[API] ❌ TTS error: {e}")
+                    raise HTTPException(status_code=500, detail=str(e))
+        
         tts_ms = int((time.time() - tts_start) * 1000)
         total_ms = llm_ms + tts_ms
         
