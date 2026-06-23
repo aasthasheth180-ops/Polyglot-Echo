@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>Polyglot Echo</title>
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
     <div class="main-wrapper">
         <header>
@@ -19,7 +21,7 @@
                     <option value="en">English (US)</option>
                     <option value="es">Spanish</option>
                     <option value="fr">French</option>
-                    </select>
+                </select>
             </div>
             <div class="control-group">
                 <label>SPEAKER PROFILE (VOICE)</label>
@@ -31,7 +33,7 @@
         </section>
 
         <div id="chat-container">
-            </div>
+        </div>
 
         <section class="input-area">
             <button id="recordBtn">🎤 Hold to Record</button>
@@ -39,5 +41,70 @@
             <button id="sendBtn" onclick="sendTextMessage()">Send</button>
         </section>
     </div>
+    <script>
+        // 1. CONFIGURATION
+        const CONFIG = {
+            BACKEND_HTTP: 'https://polyglot-echo-production.up.railway.app'
+        };
+
+        // 2. TEXT SENDING LOGIC
+        async function sendTextMessage() {
+            const input = document.getElementById('textInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            // Add user message to UI
+            const chat = document.getElementById('chat-container');
+            chat.innerHTML += `<div style="margin: 10px; color: #4ade80;">You: ${text}</div>`;
+            input.value = '';
+
+            try {
+                const resp = await fetch(`${CONFIG.BACKEND_HTTP}/api/process-text`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text: text,
+                        target_lang: document.getElementById('langSelect').value,
+                        speaker_profile: document.getElementById('profileSelect').value
+                    })
+                });
+                if (resp.ok) chat.innerHTML += `<div style="margin: 10px; color: #60a5fa;">AI: Response received.</div>`;
+            } catch (e) {
+                console.error(e);
+                chat.innerHTML += `<div style="margin: 10px; color: #f87171;">Error: Check backend logs.</div>`;
+            }
+        }
+
+        // 3. VOICE RECORDING LOGIC
+        let mediaRecorder;
+        let audioChunks = [];
+        const recordBtn = document.getElementById('recordBtn');
+
+        recordBtn.addEventListener('mousedown', async () => {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+            mediaRecorder.ondataavailable = (event) => audioChunks.push(event.data);
+            mediaRecorder.start();
+            recordBtn.textContent = "🔴 Recording...";
+        });
+
+        recordBtn.addEventListener('mouseup', () => {
+            mediaRecorder.stop();
+            recordBtn.textContent = "🎤 Hold to Record";
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                const formData = new FormData();
+                formData.append("file", audioBlob, "guest_voice.wav");
+
+                await fetch(`${CONFIG.BACKEND_HTTP}/api/process-voice`, {
+                    method: 'POST',
+                    body: formData
+                });
+                alert("Voice recorded and sent for cloning!");
+            };
+        });
+    </script>
 </body>
+
 </html>
