@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # ── Copy backend source code ───────────────────────────────────
-COPY backend/ .
+COPY backend/ /app/backend/
 
 # ── Copy frontend static files into a 'static' directory ───────
 # This is where FastAPI will serve them from
