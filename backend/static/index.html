@@ -336,30 +336,6 @@
             display: block;
         }
 
-        /* ── Guest setup panel ─────────────────────────────────── */
-        .guest-panel {
-            display: none;
-            background: #1a1f0f;
-            border: 1px solid #4a5c1a;
-            border-radius: 10px;
-            padding: 14px 16px;
-            font-size: 0.85rem;
-            color: #c6f135;
-            gap: 10px;
-            flex-direction: column;
-        }
-
-        .guest-panel.visible {
-            display: flex;
-        }
-
-        .btn-guest {
-            background: #21262d;
-            color: #e2e8f0;
-            border: 1px solid #30363d;
-            align-self: flex-start;
-        }
-
         /* ── Responsive ────────────────────────────────────────── */
         @media (max-width: 520px) {
             .controls-row {
@@ -401,35 +377,18 @@
                 <label>Speaker Profile (Voice)</label>
                 <select id="profileSelect">
                     <option value="aastha">Aastha Clone (Tuned)</option>
-                    <option value="guest">Guest Voice (Auto-Calibrate)</option>
                 </select>
             </div>
         </div>
     </div>
 
     <!-- Chat -->
-    <div class="chat-card" id="chatArea">
-        <!-- welcome message injected by JS -->
-    </div>
+    <div class="chat-card" id="chatArea"></div>
 
     <!-- Input -->
     <div class="input-card">
-
-        <!-- Guest panel — shown when guest profile selected -->
-        <div class="guest-panel" id="guestPanel">
-            <span>⚠️ Record a 10-second voice reference before sending</span>
-            <div style="display:flex;align-items:center;gap:12px;">
-                <button class="btn btn-guest" id="guestRecordBtn" onclick="recordGuestVoice()">
-                    🎙️ Record 10s Reference
-                </button>
-                <span id="guestStatus" style="font-size:0.8rem;color:#718096;">Not recorded</span>
-            </div>
-        </div>
-
-        <!-- Waveform -->
         <canvas id="waveCanvas" width="740" height="36"></canvas>
 
-        <!-- Text + mic input -->
         <div class="input-row">
             <input type="text" id="textInput" placeholder="Type a message or hold mic to speak..."
                 onkeydown="if(event.key==='Enter')sendText()" />
@@ -438,10 +397,9 @@
                 ontouchstart="startRec(event)" ontouchend="stopRec()">🎤</button>
         </div>
 
-        <!-- Status -->
         <div class="status-bar">
             <div class="status-dot" id="statusDot"></div>
-            <span id="statusText">Not connected</span>
+            <span id="statusText">Initializing...</span>
             <span style="margin-left:auto;">
                 <button onclick="connectWS()" id="connectBtn" style="background:none;border:1px solid #30363d;color:#718096;
                      border-radius:8px;padding:3px 10px;font-size:0.75rem;cursor:pointer;">
@@ -467,7 +425,6 @@
         let audioQueue = [];
         let isPlaying = false;
         let isRecording = false;
-        let guestReady = false;
         let sessionId = crypto.randomUUID();
 
         const chatArea = document.getElementById('chatArea');
@@ -478,10 +435,9 @@
         const ctx2d = canvas.getContext('2d');
 
         // ── Boot ────────────────────────────────────────────────────
-        window.addEventListener('load', () => {
-            addMsg('system', 'Hello! I am Polyglot Echo. Press and hold the microphone icon to stream audio, or type out your message directly below!', 'System Welcome');
-            document.getElementById('profileSelect').addEventListener('change', onProfileChange);
-            checkHealth();
+        window.addEventListener('load', async () => {
+            addMsg('system', '👋 Hello! I am Polyglot Echo. Press and hold the microphone icon to stream audio, or type a message below.', 'Welcome');
+            await checkHealth();
         });
 
         async function checkHealth() {
@@ -489,10 +445,13 @@
                 const r = await fetch(`${BACKEND.http}/health`, { cache: 'no-store' });
                 if (r.ok) {
                     const d = await r.json();
-                    setStatus('green', `Backend connected · AI: ${d.colab_ai ?? 'ready'}`);
+                    setStatus('green', `Backend ready · AI: ${d.colab_ai}`);
+                } else {
+                    setStatus('red', 'Backend error');
                 }
-            } catch {
+            } catch (e) {
                 setStatus('red', 'Backend unreachable');
+                console.error('[Health]', e);
             }
         }
 
@@ -502,66 +461,86 @@
             const profile = document.getElementById('profileSelect').value;
             const url = `${BACKEND.ws}/ws/stream-audio?target_lang=${lang}&speaker_profile=${profile}&session_id=${sessionId}`;
 
+            console.log('[WS] Connecting to', url);
+
             ws = new WebSocket(url);
             ws.binaryType = 'arraybuffer';
 
             ws.onopen = () => {
+                console.log('[WS] Connected');
                 setStatus('green', 'Connected · ready to stream');
                 document.getElementById('connectBtn').textContent = '✓ Connected';
             };
+
             ws.onclose = () => {
+                console.log('[WS] Disconnected');
                 setStatus('red', 'Disconnected');
                 document.getElementById('connectBtn').textContent = 'Reconnect';
             };
-            ws.onerror = () => setStatus('red', 'WebSocket error');
+
+            ws.onerror = (e) => {
+                console.error('[WS] Error', e);
+                setStatus('red', 'WebSocket error');
+            };
+
             ws.onmessage = onWsMessage;
         }
 
-        // ── WS message handler ──────────────────────────────────────
+        // ── WS Message Handler ──────────────────────────────────────
         let currentAiBubble = null;
         let currentAiText = '';
+        let latencies = {};
 
         function onWsMessage(event) {
+            // Binary data = audio chunk
             if (event.data instanceof ArrayBuffer) {
                 audioQueue.push(event.data);
                 playNext();
                 return;
             }
-            const msg = JSON.parse(event.data);
 
-            if (msg.type === 'transcript') {
-                addMsg('user', '🎤 ' + msg.text, `Detected: ${msg.language} · ${msg.latency_ms}ms`);
-                currentAiBubble = null;
-                currentAiText = '';
-            } else if (msg.type === 'llm_chunk') {
-                currentAiText += msg.text + ' ';
-                if (!currentAiBubble) {
-                    currentAiBubble = addMsg('ai', currentAiText);
-                } else {
-                    currentAiBubble.querySelector('.bubble-text').textContent = currentAiText;
+            // Text message = JSON control message
+            try {
+                const msg = JSON.parse(event.data);
+                console.log('[WS] Message:', msg.type);
+
+                if (msg.type === 'transcript') {
+                    addMsg('user', '🎤 ' + msg.text, `${msg.language} · ${msg.latency_ms}ms`);
+                    currentAiBubble = null;
+                    currentAiText = '';
                 }
-            } else if (msg.type === 'response_done') {
-                setStatus('green', 'Connected · ready');
-            } else if (msg.type === 'audio_chunk_start') {
-                setStatus('yellow', `Receiving audio · ${msg.tts_ms ?? '?'}ms`);
+                else if (msg.type === 'llm_chunk') {
+                    currentAiText += (currentAiText ? ' ' : '') + msg.text;
+                    if (!currentAiBubble) {
+                        currentAiBubble = addMsg('ai', '🔊 ' + currentAiText);
+                    } else {
+                        currentAiBubble.querySelector('.bubble-text').textContent = '🔊 ' + currentAiText;
+                    }
+                }
+                else if (msg.type === 'response_done') {
+                    console.log('[WS] Response complete:', msg.full_text);
+                    setStatus('yellow', 'Receiving audio...');
+                }
+                else if (msg.type === 'audio_chunk_start') {
+                    console.log('[WS] Audio streaming:', msg.tts_ms + 'ms');
+                }
+                else if (msg.type === 'error') {
+                    addMsg('error', '❌ ' + msg.message, 'Error');
+                }
+            } catch (e) {
+                console.error('[WS] Parse error:', e);
             }
         }
 
-        // ── Text send ───────────────────────────────────────────────
+        // ── Text Send ───────────────────────────────────────────────
         async function sendText() {
             const input = document.getElementById('textInput');
             const text = input.value.trim();
             if (!text) return;
 
-            const profile = document.getElementById('profileSelect').value;
-            if (profile === 'guest' && !guestReady) {
-                addMsg('error', '⚠️ Please record a guest voice reference first.', 'Error');
-                return;
-            }
-
             input.value = '';
             addMsg('user', '✏️ ' + text, 'Text Input');
-            setStatus('yellow', 'Processing...');
+            setStatus('yellow', 'Processing text...');
 
             try {
                 const resp = await fetch(`${BACKEND.http}/api/process-text`, {
@@ -573,23 +552,28 @@
                     body: JSON.stringify({
                         text,
                         target_lang: document.getElementById('langSelect').value,
-                        speaker_profile: profile
+                        speaker_profile: document.getElementById('profileSelect').value
                     })
                 });
 
                 if (!resp.ok) {
                     const err = await resp.text();
-                    addMsg('error', `❌ Server error ${resp.status}: ${err}`, 'Error');
-                    setStatus('red', 'Error — see message');
+                    addMsg('error', `❌ Error ${resp.status}`, 'Error');
+                    setStatus('red', 'Error');
+                    console.error('[REST] Error response:', err);
                     return;
                 }
 
                 const aiText = resp.headers.get('X-Response-Text') || '';
-                const totalMs = resp.headers.get('X-Latency-Total-MS') || '?';
-                const ttsMs = resp.headers.get('X-TTS-MS') || '?';
                 const llmMs = resp.headers.get('X-LLM-MS') || '?';
+                const ttsMs = resp.headers.get('X-TTS-MS') || '?';
+                const totalMs = resp.headers.get('X-Latency-Total-MS') || '?';
 
-                addMsg('ai', '🔊 ' + aiText, '', { llm: llmMs, tts: ttsMs, total: totalMs });
+                const bubble = addMsg('ai', '🔊 ' + aiText, '', {
+                    llm: llmMs,
+                    tts: ttsMs,
+                    total: totalMs
+                });
 
                 const blob = await resp.blob();
                 const arrayBuf = await blob.arrayBuffer();
@@ -598,40 +582,47 @@
 
                 setStatus('green', 'Connected · ready');
             } catch (e) {
-                addMsg('error', '❌ Connection pipeline processing layout timeout. Check backend logs.', 'Error');
-                setStatus('red', 'Timeout — check backend');
-                console.error('[SendText]', e);
+                addMsg('error', '❌ Connection failed: ' + e.message, 'Error');
+                setStatus('red', 'Connection error');
+                console.error('[REST] Error:', e);
             }
         }
 
-        // ── Audio playback ──────────────────────────────────────────
+        // ── Audio Playback ──────────────────────────────────────────
         async function playNext() {
             if (isPlaying || audioQueue.length === 0) return;
             isPlaying = true;
 
             const chunk = audioQueue.shift();
             try {
-                if (!audioCtx) audioCtx = new AudioContext({ sampleRate: 24000 });
-                if (audioCtx.state === 'suspended') await audioCtx.resume();
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (audioCtx.state === 'suspended') {
+                    await audioCtx.resume();
+                }
 
                 const decoded = await audioCtx.decodeAudioData(chunk.slice(0));
                 const src = audioCtx.createBufferSource();
                 src.buffer = decoded;
                 src.connect(audioCtx.destination);
-                src.onended = () => { isPlaying = false; playNext(); };
+                src.onended = () => {
+                    isPlaying = false;
+                    playNext();
+                };
                 src.start(0);
             } catch (e) {
-                console.warn('[Audio]', e);
+                console.warn('[Audio] Decode error:', e);
                 isPlaying = false;
                 playNext();
             }
         }
 
-        // ── Mic recording ───────────────────────────────────────────
+        // ── Mic Recording ───────────────────────────────────────────
         async function startRec(e) {
             if (e) e.preventDefault();
             if (!ws || ws.readyState !== WebSocket.OPEN) {
-                addMsg('error', '⚠️ Connect the WebSocket first (click Connect).', 'Error');
+                addMsg('error', '⚠️ Connect WebSocket first (click "Connect")', 'Error');
                 return;
             }
             if (isRecording) return;
@@ -641,29 +632,43 @@
             setStatus('yellow', 'Recording...');
             canvas.classList.add('visible');
 
-            const stream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    sampleRate: 16000, channelCount: 1,
-                    echoCancellation: true, noiseSuppression: true
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        sampleRate: 16000,
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true
+                    }
+                });
+
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
                 }
-            });
+                const src = audioCtx.createMediaStreamSource(stream);
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 256;
+                src.connect(analyser);
+                drawWave();
 
-            if (!audioCtx) audioCtx = new AudioContext({ sampleRate: 16000 });
-            const src = audioCtx.createMediaStreamSource(stream);
-            analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 256;
-            src.connect(analyser);
-            drawWave();
+                mediaRecorder = new MediaRecorder(stream, {
+                    mimeType: 'audio/webm;codecs=opus',
+                    audioBitsPerSecond: 16000
+                });
 
-            mediaRecorder = new MediaRecorder(stream, {
-                mimeType: 'audio/webm;codecs=opus',
-                audioBitsPerSecond: 16000
-            });
-            mediaRecorder.ondataavailable = e => {
-                if (e.data.size > 0 && ws?.readyState === WebSocket.OPEN)
-                    ws.send(e.data);
-            };
-            mediaRecorder.start(100);
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0 && ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(e.data);
+                    }
+                };
+
+                mediaRecorder.start(100);
+            } catch (e) {
+                console.error('[Mic] Error:', e);
+                addMsg('error', '❌ Microphone error: ' + e.message, 'Error');
+                isRecording = false;
+                micBtn.classList.remove('recording');
+            }
         }
 
         function stopRec() {
@@ -676,63 +681,16 @@
             clearCanvas();
             setStatus('yellow', 'Processing audio...');
 
-            if (mediaRecorder?.state !== 'inactive') {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
                 mediaRecorder.stop();
                 mediaRecorder.stream.getTracks().forEach(t => t.stop());
             }
         }
 
-        // ── Guest voice ─────────────────────────────────────────────
-        async function recordGuestVoice() {
-            const btn = document.getElementById('guestRecordBtn');
-            const sta = document.getElementById('guestStatus');
-            btn.disabled = true;
-            btn.textContent = '⏺️ Recording 10s...';
-            sta.textContent = 'Recording...';
-
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const chunks = [];
-            const mr = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-            mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-            mr.start(100);
-            await new Promise(r => setTimeout(r, 10000));
-            mr.stop();
-            stream.getTracks().forEach(t => t.stop());
-            await new Promise(r => setTimeout(r, 300));
-
-            const blob = new Blob(chunks, { type: 'audio/webm' });
-            const fd = new FormData();
-            fd.append('audio_file', blob, 'guest_ref.wav');
-
-            try {
-                const r = await fetch(`${BACKEND.http}/api/upload-guest-reference`, {
-                    method: 'POST', body: fd
-                });
-                if (r.ok) {
-                    guestReady = true;
-                    sta.textContent = '✅ Voice ready';
-                    sta.style.color = '#48bb78';
-                    btn.textContent = '✅ Re-record?';
-                } else {
-                    sta.textContent = '❌ Upload failed';
-                }
-            } catch {
-                sta.textContent = '❌ Error uploading';
-            }
-            btn.disabled = false;
-        }
-
-        function onProfileChange() {
-            const isGuest = this.value === 'guest';
-            document.getElementById('guestPanel').classList.toggle('visible', isGuest);
-            document.getElementById('textInput').disabled = isGuest && !guestReady;
-            micBtn.disabled = isGuest && !guestReady;
-        }
-
-        // ── Chat helpers ────────────────────────────────────────────
+        // ── Chat Helpers ────────────────────────────────────────────
         function addMsg(role, text, label = '', latency = null) {
             const row = document.createElement('div');
-            row.className = `msg-row ${role === 'user' ? 'user' : 'ai'}`;
+            row.className = `msg-row ${role}`;
 
             if (label) {
                 const lbl = document.createElement('span');
@@ -750,12 +708,12 @@
             bub.appendChild(txt);
             row.appendChild(bub);
 
-            if (latency) {
+            if (latency && (latency.llm || latency.tts || latency.total)) {
                 const latRow = document.createElement('div');
                 latRow.className = 'latency-row';
-                if (latency.llm) latRow.innerHTML += `<span class="latency-tag">🧠 LLM ${latency.llm}ms</span>`;
-                if (latency.tts) latRow.innerHTML += `<span class="latency-tag">🔊 TTS ${latency.tts}ms</span>`;
-                if (latency.total) latRow.innerHTML += `<span class="latency-tag">⚡ ${latency.total}ms total</span>`;
+                if (latency.llm) latRow.innerHTML += `<span class="latency-tag">🧠 ${latency.llm}ms</span>`;
+                if (latency.tts) latRow.innerHTML += `<span class="latency-tag">🔊 ${latency.tts}ms</span>`;
+                if (latency.total) latRow.innerHTML += `<span class="latency-tag">⚡ ${latency.total}ms</span>`;
                 row.appendChild(latRow);
             }
 
@@ -768,20 +726,26 @@
         function drawWave() {
             animFrame = requestAnimationFrame(drawWave);
             if (!analyser) return;
+
             const data = new Uint8Array(analyser.frequencyBinCount);
             analyser.getByteTimeDomainData(data);
+
             ctx2d.fillStyle = '#0d1117';
             ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+
             ctx2d.strokeStyle = '#48bb78';
             ctx2d.lineWidth = 2;
             ctx2d.beginPath();
+
             const sliceW = canvas.width / data.length;
             let x = 0;
+
             data.forEach((v, i) => {
-                const y = (v / 128) * canvas.height / 2;
+                const y = (v / 128) * (canvas.height / 2);
                 i === 0 ? ctx2d.moveTo(x, y) : ctx2d.lineTo(x, y);
                 x += sliceW;
             });
+
             ctx2d.stroke();
         }
 
@@ -790,7 +754,7 @@
             ctx2d.fillRect(0, 0, canvas.width, canvas.height);
         }
 
-        // ── Status helper ───────────────────────────────────────────
+        // ── Status Helper ───────────────────────────────────────────
         function setStatus(color, text) {
             statusDot.className = `status-dot ${color}`;
             statusText.textContent = text;
