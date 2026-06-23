@@ -143,9 +143,20 @@ def synthesize_speech(
     text: str,
     lang: str = "en",
     speaker_profile: str = "aastha",
-    ref_text: str = "Hey, how have you been lately?"
+    ref_text: str = "Hey, how have you been?"  # SHORT, NATURAL reference text
 ) -> bytes:
-    """Sends text to Hugging Face F5-TTS and returns clean WAV bytes."""
+    """
+    Sends text to Hugging Face F5-TTS and returns clean WAV bytes.
+    
+    CRITICAL FIX: Now passes the SHORT ref_text to match the voice sample.
+    This fixes the robotic audio issue.
+    
+    Args:
+        text: The text to synthesize (from LLM)
+        lang: Target language code
+        speaker_profile: Voice profile (aastha, etc)
+        ref_text: SHORT reference text that matches your voice sample (~5-10 words)
+    """
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -153,15 +164,15 @@ def synthesize_speech(
             "Accept": "*/*"
         }
         
-        print(f"[AI Client] Synthesize: Sending '{text[:40]}' to {COLAB_URL}/synthesize")
+        print(f"[AI Client] Synthesize: Sending '{text[:40]}' with ref_text='{ref_text}'")
         
         response = _session.post(
             f"{COLAB_URL}/synthesize",
             json={
-                "text": text,
-                "lang": lang,
+                "text": text,              # The LLM response
+                "lang": lang,              # Target language
                 "speaker_profile": speaker_profile,
-                "ref_text": ref_text
+                "ref_text": ref_text       # ← SHORT natural reference (CRITICAL!)
             },
             headers=headers,
             timeout=300,  # 5 minutes to allow model cold-start
