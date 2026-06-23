@@ -1,89 +1,43 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Polyglot Echo — Production Console</title>
-    <style>
-        body {
-            font-family: sans-serif;
-            padding: 20px;
-        }
-
-        #chat-container {
-            height: 300px;
-            border: 1px solid #ccc;
-            overflow-y: scroll;
-            margin-bottom: 10px;
-        }
-    </style>
+    <title>Polyglot Echo</title>
+    <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
-    <h1>Polyglot Echo Console</h1>
-    <div id="sessionDisplay">Session: Loading...</div>
+    <div class="main-wrapper">
+        <header>
+            <h1>Polyglot Echo</h1>
+            <p>Real-time Multilingual Conversational Streaming Platform</p>
+        </header>
 
-    <div>
-        <select id="langSelect">
-            <option value="en">English</option>
-            <option value="es">Spanish</option>
-            <option value="fr">French</option>
-        </select>
-        <select id="profileSelect">
-            <option value="default">Default Speaker</option>
-        </select>
+        <section class="controls-panel">
+            <div class="control-group">
+                <label>TARGET LANGUAGE</label>
+                <select id="langSelect">
+                    <option value="en">English (US)</option>
+                    <option value="es">Spanish</option>
+                    <option value="fr">French</option>
+                    </select>
+            </div>
+            <div class="control-group">
+                <label>SPEAKER PROFILE (VOICE)</label>
+                <select id="profileSelect">
+                    <option value="aastha">Aastha Clone (Tuned)</option>
+                    <option value="guest">Guest Voice (Record New)</option>
+                </select>
+            </div>
+        </section>
+
+        <div id="chat-container">
+            </div>
+
+        <section class="input-area">
+            <button id="recordBtn">🎤 Hold to Record</button>
+            <input type="text" id="textInput" placeholder="Type a message or hold mic to speak...">
+            <button id="sendBtn" onclick="sendTextMessage()">Send</button>
+        </section>
     </div>
-
-    <div id="chat-container"></div>
-    <input type="text" id="textInput" placeholder="Type something...">
-    <button onclick="sendTextMessage()">Send</button>
-
-    <script>
-        const CONFIG = {
-            BACKEND_HTTP: 'https://polyglot-echo-production.up.railway.app',
-            BACKEND_WS: 'wss://polyglot-echo-production.up.railway.app',
-        };
-
-        const sessionId = 'session_' + Math.random().toString(36).substring(2, 11);
-        let ws = null;
-
-        function addBubble(type, text, sub) {
-            const div = document.createElement('div');
-            div.innerHTML = `<strong>${type}:</strong> ${text} <small>(${sub})</small>`;
-            document.getElementById('chat-container').appendChild(div);
-        }
-
-        async function sendTextMessage() {
-            const input = document.getElementById('textInput');
-            const text = input.value.trim();
-            if (!text) return;
-            input.value = '';
-            addBubble('user', text, 'Text Input');
-
-            const lang = document.getElementById('langSelect').value;
-            const profile = document.getElementById('profileSelect').value;
-
-            try {
-                const resp = await fetch(`${CONFIG.BACKEND_HTTP}/api/process-text`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-Session-Id': sessionId },
-                    body: JSON.stringify({ text, target_lang: lang, speaker_profile: profile })
-                });
-
-                if (!resp.ok) throw new Error(`Status: ${resp.status}`);
-
-                addBubble('ai', 'Processing complete', 'Success');
-            } catch (e) {
-                console.error(e);
-                addBubble('ai', 'Error connecting to backend', 'Error');
-            }
-        }
-
-        window.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('sessionDisplay').textContent = `Session: ${sessionId.substring(8)}`;
-        });
-    </script>
 </body>
-
 </html>
