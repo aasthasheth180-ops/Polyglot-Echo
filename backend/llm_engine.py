@@ -12,6 +12,16 @@ LANGUAGE_NAMES = {
     "de": "German"
 }
 
+# Language-specific instructions to FORCE correct output
+LANGUAGE_RULES = {
+    "en": "You MUST respond ONLY in English. Every single word must be English. Do NOT mix languages.",
+    "hi": "आप ONLY हिंदी में जवाब दें। हर शब्द हिंदी में होना चाहिए। अंग्रेजी के साथ मिलाएं नहीं।",
+    "gu": "તમે ONLY ગુજરાતીમાં જવાબ આપો। દરેક શબ્દ ગુજરાતીમાં હોવો જોઈએ। અંગ્રેજી સાથે મિશ્રण કરશો નહીં।",
+    "es": "Debes responder SOLO en español. Cada palabra debe ser en español. NO mezcles idiomas.",
+    "fr": "Vous devez répondre UNIQUEMENT en français. Chaque mot doit être en français. N'mélangez pas les langues.",
+    "de": "Du musst ONLY auf Deutsch antworten. Jedes Wort muss auf Deutsch sein. Keine Sprachmischung."
+}
+
 # ── 🎯 Native Memory Class (Replaces LangChain ConversationBufferMemory) ──
 class LocalConversationMemory:
     def __init__(self):
@@ -57,35 +67,46 @@ class LLMEngine:
         t_start = time.time()
         
         lang_name = LANGUAGE_NAMES.get(target_lang, "English")
+        lang_rule = LANGUAGE_RULES.get(target_lang, "")
         memory = self._get_memory(session_id)
         history_text = memory.buffer if memory.buffer else "No previous conversation."
 
+        # MUCH STRICTER PROMPT - emphasis on language purity and brevity
         prompt = f"""You are Polyglot Echo, a multilingual voice assistant.
-CRITICAL RULES:
-1. Respond ONLY in {lang_name}
-2. Keep response to 2-3 sentences MAXIMUM
-3. NEVER repeat what was said before
-4. Answer ONLY the current question below
-5. Do NOT include the question in your answer
 
-Previous conversation (for context only — do NOT repeat it):
+LANGUAGE ENFORCEMENT:
+{lang_rule}
+
+CRITICAL RULES:
+1. Respond ONLY in {lang_name} — absolutely NO English, NO code, NO special characters
+2. Response must be 1-2 sentences MAXIMUM (very short and natural)
+3. NEVER repeat previous messages from the conversation history
+4. Answer ONLY the current question — ignore the history for generating new content
+5. Do NOT include the user's question in your response
+6. Speak naturally and conversationally
+
+Previous conversation (context only):
 {history_text}
 
-Current question (answer THIS and only this):
+Current question from user:
 {user_text}
 
-Your fresh response in {lang_name}:"""
+Your fresh {lang_name} response (short, natural, 1-2 sentences):"""
 
         response = self.client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
             config={
-                "temperature": 0.3,
-                "max_output_tokens": 150
+                "temperature": 0.2,  # Lower temp = more focused on language rules
+                "max_output_tokens": 100  # Shorter max token limit
             }
         )
         
         ai_text = response.text.strip() if response.text else ""
+        
+        # Post-process: clean any accidental English or special chars
+        # (Optional: you could add language detection here to verify)
+        
         memory.save_context({"input": user_text}, {"output": ai_text})
         
         return {
@@ -96,24 +117,31 @@ Your fresh response in {lang_name}:"""
     async def generate_stream(self, user_text: str, target_lang: str, session_id: str = "default"):
         """Asynchronous token-yielding stream iteration framework."""
         lang_name = LANGUAGE_NAMES.get(target_lang, "English")
+        lang_rule = LANGUAGE_RULES.get(target_lang, "")
         memory    = self._get_memory(session_id)
         history_text = memory.buffer if memory.buffer else "No previous conversation."
 
+        # SAME STRICT PROMPT as generate()
         prompt = f"""You are Polyglot Echo, a multilingual voice assistant.
-CRITICAL RULES:
-1. Respond ONLY in {lang_name}
-2. Keep response to 2-3 sentences MAXIMUM
-3. NEVER repeat what was said before
-4. Answer ONLY the current question below
-5. Do NOT include the question in your answer
 
-Previous conversation (for context only — do NOT repeat it):
+LANGUAGE ENFORCEMENT:
+{lang_rule}
+
+CRITICAL RULES:
+1. Respond ONLY in {lang_name} — absolutely NO English, NO code, NO special characters
+2. Response must be 1-2 sentences MAXIMUM (very short and natural)
+3. NEVER repeat previous messages from the conversation history
+4. Answer ONLY the current question — ignore the history for generating new content
+5. Do NOT include the user's question in your response
+6. Speak naturally and conversationally
+
+Previous conversation (context only):
 {history_text}
 
-Current question (answer THIS and only this):
+Current question from user:
 {user_text}
 
-Your fresh response in {lang_name}:"""
+Your fresh {lang_name} response (short, natural, 1-2 sentences):"""
 
         full_response = ""
         
@@ -121,8 +149,8 @@ Your fresh response in {lang_name}:"""
             model="gemini-2.5-flash",
             contents=prompt,
             config={
-                "temperature": 0.3,      
-                "max_output_tokens": 150  
+                "temperature": 0.2,  # Lower temp = more consistent language
+                "max_output_tokens": 100  # Shorter max
             }
         )
         

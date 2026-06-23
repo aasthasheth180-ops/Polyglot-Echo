@@ -117,7 +117,7 @@ async def process_text(
                     text=llm_result["text"],
                     lang=request.target_lang,
                     speaker_profile=request.speaker_profile,
-                    ref_text="Hey, how have you been lately?"
+                    ref_text=llm_result["text"]
                 )
                 break # Success, exit the loop!
             except Exception as e:
