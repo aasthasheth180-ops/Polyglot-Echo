@@ -2,50 +2,21 @@
 <html>
 
 <head>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 
 <body>
-    <div class="main-wrapper">
-        <select id="langSelect">
-            <option value="en">English</option>
-        </select>
-        <select id="profileSelect">
-            <option value="guest">Guest</option>
-        </select>
-        <div id="chat-container"></div>
-        <input type="text" id="textInput">
-        <button onclick="sendTextMessage()">Send</button>
-        <button id="recordBtn">🎤 Hold to Record</button>
-    </div>
+    <h1>Polyglot Echo</h1>
+    <select id="langSelect">
+        <option value="en">English (US)</option>
+    </select>
+    <button id="recordBtn">🎤 Hold to Record</button>
+
+    <script src="/static/script.js"></script>
     <script>
-        const BACKEND = 'https://polyglot-echo-production.up.railway.app';
-
-        async function sendTextMessage() {
-            const text = document.getElementById('textInput').value;
-            await fetch(`${BACKEND}/api/process-text`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text, target_lang: 'en', speaker_profile: 'aastha' })
-            });
-        }
-
-        let mediaRecorder, audioChunks = [];
-        const btn = document.getElementById('recordBtn');
-        btn.onmousedown = async () => {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
-            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-            mediaRecorder.start();
-        };
-        btn.onmouseup = () => {
-            mediaRecorder.stop();
-            mediaRecorder.onstop = async () => {
-                const formData = new FormData();
-                formData.append("file", new Blob(audioChunks));
-                await fetch(`${BACKEND}/api/process-voice`, { method: 'POST', body: formData });
-            };
-        };
+        // Use your Railway app URL here
+        const BACKEND = "polyglot-echo-production.up.railway.app";
+        // ... rest of your JS logic ...
     </script>
 </body>
 
