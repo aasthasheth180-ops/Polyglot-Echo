@@ -16,7 +16,7 @@ from backend.llm_engine import llm_engine
 from backend.cache import get_cached_audio, set_cached_audio
 
 # ── FIXED LINE: We are now pointing to the unique folder name ──
-from pipeline_events.kafka_producer import emit_event, flush
+from backend.pipeline_events.kafka_producer import emit_event, flush
 
 AASTHA_REF_TEXT = "Hey, how have you been lately? It feels like it has been forever."
 
