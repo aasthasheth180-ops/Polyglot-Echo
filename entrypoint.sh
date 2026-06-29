@@ -1,22 +1,61 @@
 #!/bin/bash
-# ── Railway Port Entrypoint ────────────────────────────────────
+# ── Railway Port Entrypoint with PYTHONPATH Fix ────────────────────────────
 set -e
 
-# If PORT is not set, default to 8000
+# ── CRITICAL: Set PYTHONPATH ────────────────────────────────────────────────
+# This tells Python where to find the 'backend' module
+export PYTHONPATH=/app:$PYTHONPATH
+
+# ── Port Configuration ──────────────────────────────────────────────────────
 PORT=${PORT:-8080}
 
-# Validate that PORT is an integer
+# Validate PORT is a number
 if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
-    echo "[ERROR] Invalid PORT value: $PORT (must be a positive integer)"
+    echo "[Startup] Warning: PORT='$PORT' is invalid, using 8080"
     PORT=8080
 fi
 
-echo "[Startup] Railway detected PORT=$PORT"
-echo "[Startup] Starting Uvicorn worker..."
+# ── Startup Information ────────────────────────────────────────────────────
+echo "[Startup] ════════════════════════════════════════════════════"
+echo "[Startup] Railway Polyglot Echo Backend - Startup Sequence"
+echo "[Startup] ════════════════════════════════════════════════════"
+echo "[Startup] Detected PORT: $PORT"
+echo "[Startup] PYTHONPATH: $PYTHONPATH"
+echo "[Startup] Working Directory: $(pwd)"
+echo "[Startup] Python Version: $(python --version)"
+echo "[Startup] App Directory Contents:"
+ls -la /app/backend/ 2>/dev/null | head -10 || echo "[Startup] ⚠️  No backend directory found"
 
-# Execute Uvicorn using the path to the file inside the backend folder
-# We use 'backend.main:app' to tell Uvicorn to look inside the backend package
-exec uvicorn backend.main:app \
+# ── Verify Module Imports ──────────────────────────────────────────────────
+echo "[Startup] Verifying module imports..."
+
+python -c "
+import sys
+print('[Startup] Python path:', sys.path[:3])
+try:
+    from backend.main import app
+    print('[Startup] ✅ Successfully imported: backend.main')
+    print('[Startup] ✅ FastAPI app found:', type(app).__name__)
+except ImportError as e:
+    print('[Startup] ❌ Failed to import backend.main')
+    print('[Startup] Error:', str(e))
+    sys.exit(1)
+" || {
+    echo "[Startup] ❌ Import verification failed!"
+    echo "[Startup] Debugging information:"
+    python -c "import sys; print('  Python path:', sys.path)" 2>/dev/null || true
+    python -c "import os; print('  Backend files:', os.listdir('/app/backend'))" 2>/dev/null || true
+    exit 1
+}
+
+# ── Start Uvicorn ──────────────────────────────────────────────────────────
+echo "[Startup] ════════════════════════════════════════════════════"
+echo "[Startup] Starting Uvicorn ASGI server..."
+echo "[Startup] Command: python -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
+echo "[Startup] ════════════════════════════════════════════════════"
+echo ""
+
+exec python -m uvicorn backend.main:app \
     --host 0.0.0.0 \
     --port "$PORT" \
     --workers 1 \

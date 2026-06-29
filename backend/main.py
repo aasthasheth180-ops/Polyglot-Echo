@@ -28,11 +28,11 @@ from config import (
 )
 from logger import get_logger, set_context, clear_context, log_async_function_call
 from health_check import check_endpoint_readiness
-from ai_client_refactored import (
+from ai_client import (
     synthesize_speech, check_colab_health, get_circuit_breaker,
     wait_for_hf_space_ready
 )
-from llm_engine_refactored import llm_engine
+from llm_engine import llm_engine
 
 logger = get_logger(__name__)
 
