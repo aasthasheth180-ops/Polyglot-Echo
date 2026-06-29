@@ -1,7 +1,9 @@
-# ── Production Dockerfile for Polyglot Echo ────────────────────
+# ── Production Dockerfile for Polyglot Echo ───────────────────────────────
 FROM python:3.10-slim
 
-# ── Install system dependencies ────────────────────────────────
+WORKDIR /app
+
+# ── Install System Dependencies ────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
@@ -10,32 +12,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Set working directory ──────────────────────────────────────
-WORKDIR /app
-
-# ── CRITICAL FIX: Set PYTHONPATH so imports work ───────────────
-ENV PYTHONPATH=/app
-
-# ── Copy Python requirements and install ───────────────────────
-COPY backend/requirements.txt .
+# ── Copy Python Requirements and Install ───────────────────────────────────
+COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# ── Copy backend source code ───────────────────────────────────
-COPY backend/ /app/backend/
+# ── Copy Backend Source Code ───────────────────────────────────────────────
+COPY backend/ ./backend/
 
-# ── Copy frontend static files ─────────────────────────────────
-# ── Copy frontend static files ─────────────────────────────────
-RUN mkdir -p /app/static
-# Change from 'frontend/' to 'backend/static/'
-COPY backend/static/ /app/static/
+# ── Create __init__.py in backend (CRITICAL for imports) ─────────────────
+RUN touch /app/backend/__init__.py
 
-# ── Copy entrypoint script ─────────────────────────────────────
-COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+# ── Create Required Directories ────────────────────────────────────────────
+RUN mkdir -p /data && chmod 777 /data
 
-# ── Expose port ────────────────────────────────────────────────
+# ── Copy Entrypoint Script ────────────────────────────────────────────────
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
+# ── Set PYTHONPATH Environment Variable ────────────────────────────────────
+# This tells Python where to find modules (CRITICAL for Railway)
+ENV PYTHONPATH=/app:$PYTHONPATH
+ENV PYTHONUNBUFFERED=1
+
+# ── Expose Port ────────────────────────────────────────────────────────────
 EXPOSE 8080
 
-# ── Run the application ────────────────────────────────────────
-ENTRYPOINT ["/app/entrypoint.sh"]
+# ── Health Check ───────────────────────────────────────────────────────────
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
+
+# ── Run Application ───────────────────────────────────────────────────────
+ENTRYPOINT ["/bin/bash", "entrypoint.sh"]
