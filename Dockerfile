@@ -13,7 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Copy Python Requirements and Install ───────────────────────────────────
-COPY requirements.txt .
+# ── Copy Python Requirements and Install ───────────────────────────────────
+# Copy only the requirements first to leverage Docker layer caching
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
