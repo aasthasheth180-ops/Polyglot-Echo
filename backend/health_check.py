@@ -5,8 +5,10 @@ Ensures models are loaded before accepting requests.
 """
 
 import time
+import requests
 from typing import Dict, Tuple
 from logger import get_logger
+from config import COLAB_URL
 
 logger = get_logger(__name__)
 
@@ -82,33 +84,18 @@ def require_ready() -> Tuple[bool, Dict]:
 
 def check_endpoint_readiness(endpoint_name: str, required_models: list = None) -> Tuple[bool, str]:
     """
-    Pre-flight check for specific endpoint.
-    
-    Args:
-        endpoint_name: Name of endpoint (for logging)
-        required_models: List of required models ['whisper', 'f5tts', 'all']
-    
-    Returns:
-        (is_ready, error_message)
+    Checks readiness by pinging the remote Hugging Face Space health endpoint.
     """
-    if required_models is None:
-        required_models = ['whisper', 'f5tts']
-    
-    if 'all' in required_models:
-        required_models = ['whisper', 'f5tts']
-    
-    missing = []
-    
-    if 'whisper' in required_models and not _readiness.whisper_ready:
-        missing.append("Whisper")
-    
-    if 'f5tts' in required_models and not _readiness.f5tts_ready:
-        missing.append("F5-TTS")
-    
-    if missing:
-        error_msg = f"{endpoint_name}: Missing models: {', '.join(missing)}"
-        logger.warning(f"[Readiness] {error_msg}")
-        return False, error_msg
-    
-    logger.debug(f"[Readiness] {endpoint_name} pre-flight check passed")
-    return True, ""
+    try:
+        # Ping the remote HF Space health endpoint
+        response = requests.get(f"{COLAB_URL}/health", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("models_ready"):
+                return True, ""
+            else:
+                return False, f"Remote models initializing: {data.get('status')}"
+        return False, "Voice worker unreachable"
+    except Exception as e:
+        logger.error(f"[Readiness] Failed to connect to HF Space: {e}")
+        return False, "Voice worker connection failed"
