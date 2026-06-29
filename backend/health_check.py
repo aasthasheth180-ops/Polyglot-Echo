@@ -83,19 +83,19 @@ def require_ready() -> Tuple[bool, Dict]:
 
 
 def check_endpoint_readiness(endpoint_name: str, required_models: list = None) -> Tuple[bool, str]:
-    """
-    Checks readiness by pinging the remote Hugging Face Space health endpoint.
-    """
     try:
-        # Ping the remote HF Space health endpoint
         response = requests.get(f"{COLAB_URL}/health", timeout=5)
         if response.status_code == 200:
             data = response.json()
             if data.get("models_ready"):
                 return True, ""
-            else:
-                return False, f"Remote models initializing: {data.get('status')}"
+            # --- CHANGE HERE: Don't treat "initializing" as a failure ---
+            elif data.get("status") == "initializing":
+                logger.info(f"[Readiness] System warming up: {endpoint_name}")
+                return True, "" # Allow the request to proceed, or handle it as "pending"
+            
+            return False, f"Remote models in unexpected state: {data.get('status')}"
         return False, "Voice worker unreachable"
     except Exception as e:
-        logger.error(f"[Readiness] Failed to connect to HF Space: {e}")
+        logger.error(f"[Readiness] Connection failed: {e}")
         return False, "Voice worker connection failed"
