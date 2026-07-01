@@ -14,4 +14,4 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git push https://AaasthaSSS:$HF_TOKEN@huggingface.co/spaces/AaasthaSSS/polyglot-echo-ai main
+          git push https://AaasthaSSS:$HF_TOKEN@huggingface.co/spaces/AaasthaSSS/polyglot-echo-ai main --force
