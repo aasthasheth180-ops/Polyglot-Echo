@@ -1,48 +1,22 @@
-# ── Production Dockerfile for Polyglot Echo ───────────────────────────────
-FROM python:3.10-slim
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
 
-WORKDIR /app
+WORKDIR /code
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    COQUI_TOS_AGREED=1 \
+    PYTHONPATH=/code  # <--- CRITICAL: This makes 'backend/' visible
 
-# ── Install System Dependencies ────────────────────────────────────────────
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    gcc \
-    ffmpeg \
-    libsndfile1 \
-    && rm -rf /var/lib/apt/lists/*
+# ... (Keep your existing apt-get and pip install commands) ...
 
-# ── Copy Python Requirements and Install ───────────────────────────────────
-# ── Copy Python Requirements and Install ───────────────────────────────────
-# Copy only the requirements first to leverage Docker layer caching
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+COPY requirements.hf.txt /code/requirements.txt 
+RUN pip install --no-cache-dir -r /code/requirements.txt
 
-# ── Copy Backend Source Code ───────────────────────────────────────────────
-COPY backend/ ./backend/
+# Explicitly copy the application code
+COPY app.py /code/app.py
+COPY backend/ /code/backend/ # <--- CRITICAL: Copy the backend folder!
+COPY audio/clip_1.wav /code/clip_1.wav
+RUN mkdir -p /code/audio /code/logs
 
-# ── Create __init__.py in backend (CRITICAL for imports) ─────────────────
-RUN touch /app/backend/__init__.py
-
-# ── Create Required Directories ────────────────────────────────────────────
-RUN mkdir -p /data && chmod 777 /data
-
-# ── Copy Entrypoint Script ────────────────────────────────────────────────
-COPY entrypoint.sh .
-RUN chmod +x entrypoint.sh
-
-# ── Set PYTHONPATH Environment Variable ────────────────────────────────────
-# This tells Python where to find modules (CRITICAL for Railway)
-ENV PYTHONPATH=/app:$PYTHONPATH
-ENV PYTHONUNBUFFERED=1
-
-# ── Expose Port ────────────────────────────────────────────────────────────
-EXPOSE 8080
-
-# ── Health Check ───────────────────────────────────────────────────────────
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
-
-# ── Run Application ───────────────────────────────────────────────────────
-ENTRYPOINT ["/bin/bash", "entrypoint.sh"]
+# Final Command to launch the app
+CMD ["python", "app.py"] # <--- Ensure this is at the end
