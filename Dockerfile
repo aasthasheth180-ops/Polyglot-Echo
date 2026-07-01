@@ -3,6 +3,7 @@ FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
 # 1. Install System Dependencies
 RUN apt-get update && apt-get install -y \
     python3 \
+    git \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
