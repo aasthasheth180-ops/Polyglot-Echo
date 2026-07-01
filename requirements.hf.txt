@@ -1,0 +1,24 @@
+# Web Server
+fastapi
+uvicorn
+python-multipart
+pydantic
+
+# Audio & ML
+numpy
+scipy
+soundfile
+librosa
+torch
+torchaudio
+openai-whisper
+
+# Google AI & LangChain
+google-genai
+langchain-community
+
+# Supporting
+python-dotenv
+matplotlib
+# Keep your existing F5-TTS git link here if needed
+f5-tts @ git+https://github.com/SWivid/F5-TTS.git@main
