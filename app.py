@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 # ── Environment Configuration ──────────────────────────────────
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-REF_AUDIO_PATH = os.getenv("REF_AUDIO_PATH", "audio/clip_1.wav")
+REF_AUDIO_PATH = os.getenv("REF_AUDIO_PATH", "/tmp/clip_1.wav")
 REF_TEXT = os.getenv("REF_TEXT", "Hey, how have you been?")
 PORT = int(os.getenv("PORT", "7860"))
 
@@ -369,18 +369,33 @@ async def synthesize(req: SynthRequest):
     """Synthesize speech using F5-TTS."""
     global _f5tts_model
     
-    # LAZY LOAD: Load only when needed
+    # LAZY LOAD: Load model if needed
     if _f5tts_model is None:
         logger.info("[Synthesize] First request: Loading F5-TTS model...")
         _f5tts_model = load_f5tts_model(DEVICE)
+
+    # NEW: Ensure the reference exists (Download if missing)
+    if not os.path.exists(REF_AUDIO_PATH):
+        logger.info("[Synthesize] Downloading reference audio from Dataset...")
+        try:
+            from huggingface_hub import hf_hub_download
+            downloaded_path = hf_hub_download(
+                repo_id="AaasthaSSS/polyglot-audio", 
+                filename="clip_1.wav", 
+                repo_type="dataset",
+                local_dir="/tmp",
+                local_dir_use_symlinks=False
+            )
+            logger.info(f"[Synthesize] Downloaded to: {downloaded_path}")
+        except Exception as e:
+            logger.error(f"[Synthesize] Download failed: {e}")
+            raise HTTPException(status_code=500, detail="Reference audio missing")
     
     start = time.time()
     
     try:
+        # Now ref_path will definitely exist!
         ref_path = REF_AUDIO_PATH
-        if not os.path.exists(ref_path):
-            logger.error(f"[Synthesize] Reference not found: {ref_path}")
-            raise HTTPException(status_code=500, detail=f"Reference not found: {ref_path}")
         
         logger.info(f"[Synthesize] Text: '{req.text[:40]}'")
         
@@ -421,8 +436,6 @@ async def synthesize(req: SynthRequest):
             headers={"X-TTS-MS": str(latency_ms)}
         )
     
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"[Synthesize] Error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

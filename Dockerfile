@@ -15,7 +15,6 @@ RUN pip install --no-cache-dir -r /code/requirements.txt
 # Explicitly copy the application code
 COPY app.py /code/app.py
 COPY backend/ /code/backend/ # <--- CRITICAL: Copy the backend folder!
-COPY audio/clip_1.wav /code/clip_1.wav
 RUN mkdir -p /code/audio /code/logs
 
 # Final Command to launch the app
