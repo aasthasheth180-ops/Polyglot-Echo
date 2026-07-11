@@ -21,7 +21,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 # 3. Install Python Dependencies
 RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel
-COPY requirements.hf.txt /code/requirements.txt
+COPY requirements.txt /code/requirements.txt
 RUN pip3 install --no-cache-dir -r /code/requirements.txt
 
 # 4. Copy Code
