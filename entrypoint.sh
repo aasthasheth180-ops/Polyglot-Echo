@@ -1,62 +1,35 @@
 #!/bin/bash
-# ── Railway Port Entrypoint with PYTHONPATH Fix ────────────────────────────
 set -e
 
-# ── CRITICAL: Set PYTHONPATH ────────────────────────────────────────────────
-# This tells Python where to find the 'backend' module
-export PYTHONPATH=/app:$PYTHONPATH
+# ── Two processes, one container ──────────────────────────────────────
+# app.py   = GPU worker (Whisper + F5-TTS) — internal only, not exposed
+# main.py  = public API + serves index.html + talks to Gemini — this is
+#            what HF Space's single exposed port must point at
+#
+# ai_client.py / config.py read AI_SERVICE_URL from the environment, so
+# pointing it at localhost here is enough — no code change needed there.
 
-# ── Port Configuration ──────────────────────────────────────────────────────
-PORT=${PORT:-8080}
+export WORKER_PORT=${WORKER_PORT:-8001}
+export PORT=${PORT:-7860}
+export AI_SERVICE_URL="http://127.0.0.1:${WORKER_PORT}"
 
-# Validate PORT is a number
-if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
-    echo "[Startup] Warning: PORT='$PORT' is invalid, using 8080"
-    PORT=8080
-fi
+echo "[Entrypoint] Starting AI worker (app.py) on internal port ${WORKER_PORT}..."
+PORT=${WORKER_PORT} python3 /code/app.py &
+WORKER_PID=$!
 
-# ── Startup Information ────────────────────────────────────────────────────
-echo "[Startup] ════════════════════════════════════════════════════"
-echo "[Startup] Railway Polyglot Echo Backend - Startup Sequence"
-echo "[Startup] ════════════════════════════════════════════════════"
-echo "[Startup] Detected PORT: $PORT"
-echo "[Startup] PYTHONPATH: $PYTHONPATH"
-echo "[Startup] Working Directory: $(pwd)"
-echo "[Startup] Python Version: $(python --version)"
-echo "[Startup] App Directory Contents:"
-ls -la /app/backend/ 2>/dev/null | head -10 || echo "[Startup] ⚠️  No backend directory found"
-
-# ── Verify Module Imports ──────────────────────────────────────────────────
-echo "[Startup] Verifying module imports..."
-
-python -c "
-import sys
-print('[Startup] Python path:', sys.path[:3])
-try:
-    from backend.main import app
-    print('[Startup] ✅ Successfully imported: backend.main')
-    print('[Startup] ✅ FastAPI app found:', type(app).__name__)
-except ImportError as e:
-    print('[Startup] ❌ Failed to import backend.main')
-    print('[Startup] Error:', str(e))
-    sys.exit(1)
-" || {
-    echo "[Startup] ❌ Import verification failed!"
-    echo "[Startup] Debugging information:"
-    python -c "import sys; print('  Python path:', sys.path)" 2>/dev/null || true
-    python -c "import os; print('  Backend files:', os.listdir('/app/backend'))" 2>/dev/null || true
+echo "[Entrypoint] Waiting for worker to come up..."
+for i in $(seq 1 60); do
+  if curl -sf "http://127.0.0.1:${WORKER_PORT}/health" > /dev/null 2>&1; then
+    echo "[Entrypoint] Worker is responding (models still load lazily on first real request)."
+    break
+  fi
+  if ! kill -0 "$WORKER_PID" 2>/dev/null; then
+    echo "[Entrypoint] Worker process died during startup — check logs above."
     exit 1
-}
+  fi
+  sleep 2
+done
 
-# ── Start Uvicorn ──────────────────────────────────────────────────────────
-echo "[Startup] ════════════════════════════════════════════════════"
-echo "[Startup] Starting Uvicorn ASGI server..."
-echo "[Startup] Command: python -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
-echo "[Startup] ════════════════════════════════════════════════════"
-echo ""
-
-exec python -m uvicorn backend.main:app \
-    --host 0.0.0.0 \
-    --port "$PORT" \
-    --workers 1 \
-    --log-level info
+echo "[Entrypoint] Starting main API (main.py) on public port ${PORT}..."
+cd /code/backend
+exec python3 -m uvicorn main:app --host 0.0.0.0 --port "${PORT}"

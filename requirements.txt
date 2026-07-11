@@ -1,0 +1,41 @@
+# Web Server
+fastapi
+uvicorn
+python-multipart
+pydantic
+
+# Audio & ML
+numpy
+scipy
+soundfile
+librosa
+torch
+torchaudio
+openai-whisper
+
+# Google AI & Database/Cache
+# FIX: llm_engine.py uses `from google import genai` + `genai.Client(...)`
+# That is the NEW unified SDK, package name is `google-genai`, NOT `google-generativeai`.
+# Installing the old package here silently breaks LLMEngine() at import time
+# (AttributeError: module 'google.generativeai' has no attribute 'Client'),
+# which takes down main.py's whole import chain -> intermittent 500s.
+google-genai
+langchain-community
+supabase
+
+# FIX: models.py imports these directly but neither was ever declared here —
+# `import models` would crash immediately without them, which now matters
+# since main.py's /internal/qstash-webhook imports it to write stage_events.
+sqlalchemy
+psycopg2-binary
+
+# FIX: you provisioned Upstash REST credentials (UPSTASH_REDIS_REST_URL / _TOKEN),
+# so use the REST client everywhere instead of the TCP `redis` package.
+upstash-redis
+qstash
+requests
+python-dotenv
+huggingface_hub
+
+# F5-TTS
+f5-tts @ git+https://github.com/SWivid/F5-TTS.git@main

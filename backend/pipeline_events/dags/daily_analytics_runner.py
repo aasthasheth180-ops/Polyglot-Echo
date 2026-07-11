@@ -1,8 +1,9 @@
 # pipeline/dags/daily_analytics_runner.py
+import os
 import sqlalchemy as sa
 from datetime import datetime, timedelta, date
 
-DB_CONN = "postgresql://polgyglot:polyglot_pass@localhost:5432/polyglot_echo"
+DB_CONN = os.getenv("DATABASE_URL")
 
 def compute_stats() -> dict:
     """Stage 1: Aggregate performance metrics from conversation history logs"""

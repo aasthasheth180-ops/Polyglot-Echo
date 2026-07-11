@@ -271,7 +271,8 @@ def synthesize_speech(
                     "text": text,
                     "lang": lang,
                     "speaker_profile": speaker_profile,
-                    "ref_text": ref_text
+                    "ref_text": ref_text,
+                    "session_id": session_id  # FIX: lets the worker pick the right guest's cloned voice
                 },
                 headers=headers,
                 timeout=TTS_TIMEOUT,
