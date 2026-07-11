@@ -42,7 +42,7 @@ SPEAKER_PROFILES = ["aastha", "guest"]
 # TTS -> sounds broken/robotic on top of just reading "short"). Raised to
 # give the model room for a complete, natural reply. Tune down if latency
 # becomes an issue for your GPU tier.
-LLM_MODEL = os.getenv("LLM_MODEL", "gemini-2.5-flash")
+LLM_MODEL = os.getenv("LLM_MODEL", "gemini-1.5-flash")
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "512"))
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.4"))
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "30"))
