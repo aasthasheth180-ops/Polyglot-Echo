@@ -170,15 +170,48 @@ def _guest_filename(session_id: str) -> str:
 
 
 def _trim_reference_clip(raw_path: str) -> str:
-    """Re-encode + hard-trim a reference clip to a safe length. Returns the
-    trimmed file's path (a sibling of raw_path with a _trimmed suffix)."""
+    """
+    Re-encode + trim a reference clip to a safe length, following F5-TTS's
+    own documented guidance: cutting mid-word/mid-phrase with no trailing
+    silence is what causes the model to occasionally repeat a chunk of the
+    reference audio inside longer generations (a known F5-TTS behavior, not
+    unique to this app). So: prefer cutting at a natural pause if one exists
+    within our window, and always leave ~1s of silence at the end either way.
+    """
     import subprocess
     trimmed_path = raw_path.rsplit(".", 1)[0] + "_trimmed.wav"
     if os.path.exists(trimmed_path):
         return trimmed_path
 
+    cut_at = _REF_CLIP_MAX_SECONDS  # fallback if no natural pause is found
+
+    try:
+        detect = subprocess.run(
+            ["ffmpeg", "-i", raw_path, "-af", "silencedetect=noise=-30dB:d=0.3",
+             "-t", str(_REF_CLIP_MAX_SECONDS + 2), "-f", "null", "-"],
+            capture_output=True, timeout=20, text=True
+        )
+        pause_points = []
+        for line in detect.stderr.splitlines():
+            if "silence_start:" in line:
+                try:
+                    t = float(line.split("silence_start:")[1].strip())
+                    if 3.0 <= t <= _REF_CLIP_MAX_SECONDS:
+                        pause_points.append(t)
+                except ValueError:
+                    pass
+        if pause_points:
+            cut_at = max(pause_points)  # the latest natural pause within our window
+            logger.info(f"[Reference] Cutting at natural pause: {cut_at:.1f}s")
+        else:
+            logger.info(f"[Reference] No natural pause found in first {_REF_CLIP_MAX_SECONDS}s; "
+                         f"using hard cutoff with trailing silence padding")
+    except Exception as e:
+        logger.warning(f"[Reference] Silence detection failed, using hard cutoff: {e}")
+
     result = subprocess.run(
-        ["ffmpeg", "-y", "-i", raw_path, "-t", str(_REF_CLIP_MAX_SECONDS),
+        ["ffmpeg", "-y", "-i", raw_path, "-t", str(cut_at),
+         "-af", "apad=pad_dur=1",  # ~1s trailing silence, per F5-TTS's own README guidance
          "-ar", "24000", "-ac", "1", trimmed_path],
         capture_output=True, timeout=30
     )
