@@ -144,26 +144,87 @@ class SynthRequest(BaseModel):
     text: str
     lang: str = "en"
     speaker_profile: str = "aastha"   # "aastha" | "guest"
-    ref_text: str = REF_TEXT
+    ref_text: str = ""                # IGNORED now — see _prepare_reference(). Kept only
+                                        # for backward-compat with older clients; the worker
+                                        # derives the real ref_text itself.
     session_id: str = ""              # which user's cloned voice to use, when speaker_profile == "guest"
 
 
+# Cache: resolved (trimmed_audio_path -> auto-transcribed ref_text), so we only
+# run Whisper once per reference clip, not on every single /synthesize call.
+_ref_text_cache: dict = {}
+
+# F5-TTS's own preprocessing silently clips any reference clip longer than
+# ~12s. If the ref_text you give it doesn't match that clipped duration,
+# F5-TTS's duration predictor gets a wildly wrong "words per second" prior
+# from the mismatch and reproduces that wrong pace on EVERY generated
+# sentence — this is the actual cause of slow/deep/"ghost-sounding" output.
+# So: trim it ourselves to a known-safe length, then transcribe exactly
+# that trimmed audio — guaranteeing the text always matches the audio.
+_REF_CLIP_MAX_SECONDS = 11
+
+
 def _guest_filename(session_id: str) -> str:
-    # Per-session file, e.g. "guest_3f9c1a2b.wav" — this is what makes
-    # "record my voice once, then every answer uses MY clone" possible.
-    # Without this, every guest shared one global slot and stepped on
-    # each other.
     safe_id = "".join(c for c in session_id if c.isalnum() or c == "-") or "default"
     return f"guest_{safe_id}.wav"
 
 
-def _ensure_reference_ready(speaker_profile: str, session_id: str = "") -> str:
+def _trim_reference_clip(raw_path: str) -> str:
+    """Re-encode + hard-trim a reference clip to a safe length. Returns the
+    trimmed file's path (a sibling of raw_path with a _trimmed suffix)."""
+    import subprocess
+    trimmed_path = raw_path.rsplit(".", 1)[0] + "_trimmed.wav"
+    if os.path.exists(trimmed_path):
+        return trimmed_path
+
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-i", raw_path, "-t", str(_REF_CLIP_MAX_SECONDS),
+         "-ar", "24000", "-ac", "1", trimmed_path],
+        capture_output=True, timeout=30
+    )
+    if result.returncode != 0 or not os.path.exists(trimmed_path):
+        logger.warning(f"[Reference] Trim failed, using raw file untrimmed: "
+                        f"{result.stderr.decode(errors='ignore')[:200]}")
+        return raw_path
+    return trimmed_path
+
+
+def _auto_transcribe_reference(trimmed_path: str) -> str:
+    """Whisper-transcribe the EXACT audio F5-TTS will use as reference,
+    caching the result so this only runs once per clip."""
+    global _whisper_model
+
+    if trimmed_path in _ref_text_cache:
+        return _ref_text_cache[trimmed_path]
+
+    if _whisper_model is None:
+        logger.info("[Reference] Loading Whisper to auto-transcribe reference clip...")
+        _whisper_model = load_whisper_model(DEVICE)
+
+    with torch.no_grad():
+        result = _whisper_model.transcribe(
+            trimmed_path, task="transcribe", temperature=0.0, fp16=(DEVICE == "cuda")
+        )
+    text = result.get("text", "").strip()
+
+    if not text:
+        logger.warning(f"[Reference] Auto-transcription came back empty for {trimmed_path}; "
+                        f"F5-TTS pacing may be off until a clearer reference is provided.")
+        text = "Hello."  # non-empty fallback so F5-TTS doesn't choke on an empty ref_text
+
+    _ref_text_cache[trimmed_path] = text
+    logger.info(f"[Reference] Auto-transcribed '{trimmed_path}': '{text[:60]}'")
+    return text
+
+
+def _prepare_reference(speaker_profile: str, session_id: str = "") -> tuple:
     """
-    Resolve which reference wav to use, downloading it from the private
-    HF Dataset if it's not on local disk yet. This is where guest mode
-    was completely missing before — /synthesize always used REF_AUDIO_PATH
-    no matter what speaker_profile was passed, and there was no per-user
-    isolation even when it was wired up.
+    Returns (trimmed_audio_path, accurate_ref_text) for whichever profile is
+    requested — downloading from the dataset if needed, trimming to a safe
+    duration, and auto-transcribing exactly that trimmed audio. This is the
+    single source of truth for reference audio/text now; any ref_text a
+    client sends is ignored on purpose, since a hand-typed guess is exactly
+    what caused the slow/"ghost" voice bug.
     """
     if speaker_profile == "guest":
         filename = _guest_filename(session_id)
@@ -172,30 +233,31 @@ def _ensure_reference_ready(speaker_profile: str, session_id: str = "") -> str:
         target_path = REF_AUDIO_PATH
         filename = "clip_1.wav"
 
-    if os.path.exists(target_path):
-        return target_path
-
-    logger.info(f"[Reference] '{target_path}' missing locally — syncing from dataset...")
-    try:
-        from huggingface_hub import hf_hub_download
-        downloaded_path = hf_hub_download(
-            repo_id=DATASET_REPO_ID,
-            filename=filename,
-            repo_type="dataset",
-            token=HF_TOKEN,          # FIX: required for private datasets
-            local_dir="/tmp",
-            local_dir_use_symlinks=False
-        )
-        logger.info(f"[Reference] Synced to: {downloaded_path}")
-        return downloaded_path
-    except Exception as e:
-        logger.error(f"[Reference] Sync failed for '{speaker_profile}': {e}", exc_info=True)
-        if speaker_profile == "guest":
-            raise HTTPException(
-                status_code=400,
-                detail="No cloned voice found for this session yet. Record a voice sample first via /upload-reference."
+    if not os.path.exists(target_path):
+        logger.info(f"[Reference] '{target_path}' missing locally — syncing from dataset...")
+        try:
+            from huggingface_hub import hf_hub_download
+            target_path = hf_hub_download(
+                repo_id=DATASET_REPO_ID,
+                filename=filename,
+                repo_type="dataset",
+                token=HF_TOKEN,
+                local_dir="/tmp",
+                local_dir_use_symlinks=False
             )
-        raise HTTPException(status_code=500, detail="Reference audio missing and could not be synced")
+            logger.info(f"[Reference] Synced to: {target_path}")
+        except Exception as e:
+            logger.error(f"[Reference] Sync failed for '{speaker_profile}': {e}", exc_info=True)
+            if speaker_profile == "guest":
+                raise HTTPException(
+                    status_code=400,
+                    detail="No cloned voice found for this session yet. Record a voice sample first via /upload-reference."
+                )
+            raise HTTPException(status_code=500, detail="Reference audio missing and could not be synced")
+
+    trimmed_path = _trim_reference_clip(target_path)
+    ref_text = _auto_transcribe_reference(trimmed_path)
+    return trimmed_path, ref_text
 
 
 @app.get("/health")
@@ -266,16 +328,18 @@ async def synthesize(req: SynthRequest):
         logger.info("[Synthesize] First request: Loading F5-TTS model...")
         _f5tts = load_f5tts_model(DEVICE)
 
-    ref_path = _ensure_reference_ready(req.speaker_profile, req.session_id)
+    ref_path, ref_text = _prepare_reference(req.speaker_profile, req.session_id)
     start = time.time()
 
     try:
-        logger.info(f"[Synthesize] profile={req.speaker_profile} text='{req.text[:40]}'")
+        logger.info(f"[Synthesize] profile={req.speaker_profile} text='{req.text[:40]}' "
+                    f"ref_text='{ref_text[:40]}'")
 
         with torch.no_grad():
             audio_wave, sample_rate, _ = _f5tts.infer(
                 ref_file=ref_path,
-                ref_text=req.ref_text,
+                ref_text=ref_text,   # FIX: always the auto-transcribed, duration-matched text —
+                                      # a mismatched ref_text is what caused the slow/"ghost" voice.
                 gen_text=req.text,
                 speed=1.0
             )
@@ -356,6 +420,13 @@ async def upload_reference(audio: UploadFile = File(...), session_id: str = Form
 
         logger.info(f"[Upload] Guest reference saved locally: {local_path} ({os.path.getsize(local_path)} bytes)")
 
+        # FIX: transcribe the SAME trimmed audio F5-TTS will actually use, not
+        # the raw untrimmed upload — that mismatch is exactly what causes the
+        # slow/"ghost"-sounding voice bug for Aastha's clip, and would have
+        # eventually hit guest clones too once someone recorded >12s.
+        trimmed_path = _trim_reference_clip(local_path)
+        detected_text = _auto_transcribe_reference(trimmed_path)
+
         try:
             from huggingface_hub import HfApi
             api = HfApi(token=HF_TOKEN)
@@ -369,7 +440,10 @@ async def upload_reference(audio: UploadFile = File(...), session_id: str = Form
         except Exception as e:
             logger.warning(f"[Upload] Could not persist to dataset (still usable this session): {e}")
 
-        return {"status": "saved", "path": local_path, "bytes": len(content), "session_id": session_id}
+        return {
+            "status": "saved", "path": local_path, "bytes": len(content),
+            "session_id": session_id, "detected_text": detected_text
+        }
     except Exception as e:
         logger.error(f"[Upload] Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

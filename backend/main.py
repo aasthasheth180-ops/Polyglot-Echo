@@ -46,7 +46,7 @@ from config import (
 from logger import get_logger, set_context, clear_context, log_async_function_call
 from health_check import check_endpoint_readiness
 from ai_client import (
-    synthesize_speech, transcribe_audio, check_colab_health, get_circuit_breaker,
+    synthesize_speech, check_colab_health, get_circuit_breaker,
     wait_for_hf_space_ready
 )
 from llm_engine import llm_engine
@@ -143,6 +143,11 @@ async def enroll_voice(
 
         import requests
         # Save the raw sample on the worker (app.py), keyed by this session.
+        # FIX: the worker now trims the clip to a safe length AND transcribes
+        # exactly that trimmed audio itself, returning detected_text directly —
+        # so we no longer make a second, separate /transcribe call here on the
+        # raw untrimmed clip, which could disagree with what F5-TTS actually
+        # uses as its reference (the root cause of the slow/"ghost" voice bug).
         upload_resp = requests.post(
             f"{COLAB_URL}/upload-reference",
             files={"audio": ("guest_sample.wav", content, "audio/wav")},
@@ -152,9 +157,7 @@ async def enroll_voice(
         if upload_resp.status_code != 200:
             raise HTTPException(status_code=502, detail="Voice worker rejected the sample upload.")
 
-        # Auto-transcribe the sample to get an accurate ref_text.
-        transcribe_result = transcribe_audio(content, session_id=session_id)
-        ref_text = transcribe_result.get("text", "").strip()
+        ref_text = upload_resp.json().get("detected_text", "").strip()
 
         if not ref_text:
             raise HTTPException(
@@ -560,16 +563,25 @@ async def websocket_stream_audio(websocket: WebSocket):
 
 
 # ── Static Files ───────────────────────────────────────────────
-static_dir = "/app/static"
-if os.path.exists(static_dir):
-    logger.info(f"[FastAPI] Mounting static files from {static_dir}")
-    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
-else:
-    local_static = os.path.join(os.path.dirname(__file__), "static")
-    if os.path.exists(local_static):
-        logger.info(f"[FastAPI] Mounting static files from {local_static}")
-        app.mount("/", StaticFiles(directory=local_static, html=True), name="static")
-    else:
-        logger.warning("[FastAPI] Static directory not found; frontend will not be served")
+# FIX: index.html now lives in a top-level frontend/ folder (sibling of
+# backend/), not backend/static/ — checking all plausible locations so
+# this keeps working regardless of which layout is actually deployed.
+_static_candidates = [
+    "/app/static",
+    "/code/frontend",
+    os.path.join(os.path.dirname(__file__), "static"),
+    os.path.join(os.path.dirname(__file__), "..", "frontend"),
+]
+
+_mounted = False
+for _candidate in _static_candidates:
+    if os.path.exists(_candidate):
+        logger.info(f"[FastAPI] Mounting static files from {_candidate}")
+        app.mount("/", StaticFiles(directory=_candidate, html=True), name="static")
+        _mounted = True
+        break
+
+if not _mounted:
+    logger.warning(f"[FastAPI] No static directory found in any of {_static_candidates}; frontend will not be served")
 
 logger.info("[FastAPI] ✅ Application startup complete\n")
