@@ -209,11 +209,13 @@ async def preview_voice(x_session_id: Optional[str] = Header(default=None)):
     if not success:
         raise HTTPException(status_code=503, detail="Preview synthesis failed — please try again.")
 
+        
     return Response(
         content=audio_bytes,
         media_type="audio/wav",
-        headers={"X-Session-Id": session_id, "X-Preview-Text": preview_line}
+        headers={"X-Session-Id": session_id}
     )
+
 
 
 @app.post("/api/voice/approve")
