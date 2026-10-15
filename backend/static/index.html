@@ -495,7 +495,7 @@
             <div class="mode-btn" id="btnGuest" onclick="selectMode('guest')">
                 <span class="icon">🎤</span>
                 <div class="title">Clone my own voice</div>
-                <div class="desc">Record ~15 seconds. It'll clone it, then you approve before chatting.</div>
+                <div class="desc">Record or upload your voice, preview it, and approve before chatting.</div>
             </div>
         </div>
     </div>
@@ -504,11 +504,15 @@
     <div class="card hidden" id="enrollCard">
 
         <div class="enroll-step" id="enrollRecordStep">
-            <div class="step-label">Step 1 — Record your voice</div>
+            <div class="step-label">Step 1 — Add your voice</div>
             <div class="record-circle" id="recordCircle" onclick="toggleEnrollRecording()">🎤</div>
             <div class="rec-timer" id="recTimer">0:00</div>
             <div class="rec-hint">Speak naturally for 10–15 seconds — read a sentence, describe your day, anything with
                 a few full sentences works best. Tap to start, tap again to stop.</div>
+            <div class="rec-hint">— or upload an existing recording —</div>
+            <input type="file" id="guestAudioFile" accept="audio/*,.wav,.mp3,.m4a,.webm,.ogg" class="hidden" onchange="handleGuestUpload(this)" />
+            <button class="btn btn-ghost" onclick="el('guestAudioFile').click()">⬆ Upload Audio</button>
+            <div class="rec-hint">Only use a voice you own or have explicit permission to clone.</div>
         </div>
 
         <div class="enroll-step hidden" id="enrollCloningStep">
@@ -523,7 +527,7 @@
             <div class="transcript-preview" id="detectedTextPreview"></div>
             <div class="preview-row">
                 <button class="btn btn-ghost" onclick="playPreviewAgain()">▶ Play again</button>
-                <button class="btn btn-ghost" onclick="resetEnrollment()">↺ Re-record</button>
+                <button class="btn btn-ghost" onclick="resetEnrollment()">↺ Try another recording</button>
                 <button class="btn btn-primary" onclick="approveVoice()">✓ Yes, use this voice</button>
             </div>
         </div>
@@ -633,6 +637,7 @@
             el('recordCircle').classList.remove('recording');
             el('recordCircle').textContent = '🎤';
             el('recTimer').textContent = '0:00';
+            el('guestAudioFile').value = '';
         }
 
         async function toggleEnrollRecording() {
@@ -664,6 +669,16 @@
             }
         }
 
+        async function handleGuestUpload(input) {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            if (!file.type.startsWith('audio/') && !/\.(wav|mp3|m4a|webm|ogg)$/i.test(file.name)) {
+                showEnrollError('Please choose an audio recording.');
+                return;
+            }
+            await runEnrollment(file);
+        }
+
         async function runEnrollment(blob) {
             el('enrollRecordStep').classList.add('hidden');
             el('enrollCloningStep').classList.remove('hidden');
@@ -671,7 +686,7 @@
             try {
                 // Step 1: enroll (uploads sample, auto-transcribes it)
                 const form = new FormData();
-                form.append('audio_file', blob, 'sample.webm');
+                form.append('audio_file', blob, blob instanceof File ? blob.name : 'sample.webm');
                 const enrollResp = await fetch('/api/voice/enroll', {
                     method: 'POST', headers: headers(), body: form
                 });

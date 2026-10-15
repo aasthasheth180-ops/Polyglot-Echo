@@ -7,3 +7,4 @@ pipeline_metrics.csv
 benchmark_results.json
 *.wav
 *.mp3
+.venv/
