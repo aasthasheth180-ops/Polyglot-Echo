@@ -144,7 +144,11 @@ def process_audio_loop(
 
     # Cache lookup keyed by the RESPONSE TEXT (not the user's transcript) — fixes
     # "sometimes plays a stale/previous answer" for repeated user phrasing.
-    cached = get_cached_audio(ai_text, target_lang, speaker_profile)
+    cached = ( 
+        get_cached_audio(ai_text, target_lang, speaker_profile)
+        if speaker_profile != "guest"
+        else None
+    )
     if cached:
         total_ms = int((time.time() - pipeline_start) * 1000)
         emit_event(session_id, "SESSION_END", latency_ms=total_ms, metadata={"cache_hit": True})
@@ -171,7 +175,7 @@ def process_audio_loop(
 
     emit_event(session_id, "TTS_DONE", latency_ms=tts_ms, metadata={"speaker_profile": speaker_profile})
 
-    if tts_success:
+    if tts_success and speaker_profile != "guest":
         set_cached_audio(ai_text, target_lang, audio_bytes_out, speaker_profile)
 
     total_ms = int((time.time() - pipeline_start) * 1000)
