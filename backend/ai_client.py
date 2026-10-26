@@ -328,28 +328,28 @@ def synthesize_speech(
 # ── Health Check ───────────────────────────────────────────────
 @log_function_call
 def check_colab_health() -> bool:
-    """Check if Hugging Face Space is healthy."""
+    """Check whether the internal voice worker is reachable."""
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
         response = _session.get(
             f"{COLAB_URL}/health",
-            headers=headers,
             timeout=15,
             allow_redirects=True
         )
-        
-        if response.status_code == 200:
-            health = response.json()
-            models_ready = health.get("models_ready", False)
-            logger.debug(f"[AI Client] Health check: {health}")
-            return models_ready
-    
+
+        if response.status_code != 200:
+            logger.warning(
+                f"[AI Client] Voice worker returned HTTP {response.status_code}"
+            )
+            return False
+
+        health = response.json()
+        logger.debug(f"[AI Client] Voice worker health: {health}")
+
+        return health.get("status") in ("ok", "initializing")
+
     except Exception as e:
-        logger.error(f"[AI Client] Health check failed: {e}")
-    
-    return False
+        logger.error(f"[AI Client] Voice worker health check failed: {e}")
+        return False
 
 
 def get_hf_space_status() -> dict:

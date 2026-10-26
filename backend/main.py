@@ -100,18 +100,18 @@ def _resolve_ref_text(speaker_profile: str, session_id: str) -> str:
 @app.get("/health")
 async def health():
     try:
-        colab_ok = check_colab_health()
+        worker_ok = check_colab_health()
     except Exception as e:
-        logger.error(f"[Health] Colab health check failed: {e}")
-        colab_ok = False
+        logger.error(f"[Health] Voice worker health check failed: {e}")
+        worker_ok = False
 
     circuit_breaker = get_circuit_breaker()
 
     return JSONResponse({
         "status": "ok",
-        "service": "polyglot-echo",
+        "service": "auralis",
         "version": "2.2",
-        "colab_ai": "connected" if colab_ok else "disconnected",
+        "voice_worker": "connected" if worker_ok else "disconnected",
         "circuit_breaker": {
             "open": circuit_breaker.is_open,
             "failures": len(circuit_breaker.failures)

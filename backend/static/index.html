@@ -830,10 +830,20 @@
 
                 const transcript = resp.headers.get('X-Transcript') || '';
                 const aiText = resp.headers.get('X-Response-Text') || '';
+
+                const whisperMs = resp.headers.get('X-Whisper-MS') || '?';
+                const llmMs = resp.headers.get('X-LLM-MS') || '?';
+                const ttsMs = resp.headers.get('X-TTS-MS') || '?';
                 const totalMs = resp.headers.get('X-Latency-Total-MS') || '?';
 
                 if (transcript) addMsg('user', '🎤 ' + transcript, 'You');
-                addMsg('ai', aiText, '', { total: totalMs });
+
+                addMsg('ai', aiText, '', {
+                    whisper: whisperMs,
+                    llm: llmMs,
+                    tts: ttsMs,
+                    total: totalMs
+                });
 
                 const buf = await resp.arrayBuffer();
                 playArrayBuffer(buf);
@@ -884,16 +894,28 @@
             bub.className = `bubble ${role}`;
             bub.textContent = text;
             row.appendChild(bub);
+            if (latency && (latency.whisper || latency.llm || latency.tts || latency.total)) {
+            const latRow = document.createElement('div');
+            latRow.className = 'latency-row';
 
-            if (latency && (latency.llm || latency.tts || latency.total)) {
-                const latRow = document.createElement('div');
-                latRow.className = 'latency-row';
-                if (latency.llm) latRow.innerHTML += `<span class="latency-tag">🧠 ${latency.llm}ms</span>`;
-                if (latency.tts) latRow.innerHTML += `<span class="latency-tag">🔊 ${latency.tts}ms</span>`;
-                if (latency.total) latRow.innerHTML += `<span class="latency-tag">⚡ ${latency.total}ms</span>`;
-                row.appendChild(latRow);
+            if (latency.whisper && latency.whisper !== '?') {
+                latRow.innerHTML += `<span class="latency-tag">Whisper: ${latency.whisper}ms</span>`;
             }
 
+            if (latency.llm && latency.llm !== '?') {
+                latRow.innerHTML += `<span class="latency-tag">Gemini: ${latency.llm}ms</span>`;
+            }
+
+            if (latency.tts && latency.tts !== '?') {
+                latRow.innerHTML += `<span class="latency-tag">TTS: ${latency.tts}ms</span>`;
+            }
+
+            if (latency.total && latency.total !== '?') {
+                latRow.innerHTML += `<span class="latency-tag">Total: ${latency.total}ms</span>`;
+            }
+
+            row.appendChild(latRow);
+        }
             el('chatArea').appendChild(row);
             el('chatArea').scrollTop = el('chatArea').scrollHeight;
         }

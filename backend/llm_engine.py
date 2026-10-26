@@ -34,6 +34,7 @@ from config import (
     LLM_MODEL, LLM_MAX_TOKENS, LLM_TEMPERATURE,
 )
 from logger import get_logger, set_context, log_function_call
+from google.genai import errors
 
 logger = get_logger(__name__)
 
@@ -171,14 +172,39 @@ class LLMEngine:
             memory = self._get_memory(session_id)
             prompt = _build_prompt(user_text, target_lang, memory.buffer)
 
-            response = self.client.models.generate_content(
-                model=LLM_MODEL,
-                contents=prompt,
-                config={
-                    "temperature": LLM_TEMPERATURE,
-                    "max_output_tokens": LLM_MAX_TOKENS,
-                }
-            )
+            max_attempts = 3
+
+            for attempt in range(max_attempts):
+                try:
+                    response = self.client.models.generate_content(
+                        model=LLM_MODEL,
+                        contents=prompt,
+                        config={
+                            "temperature": LLM_TEMPERATURE,
+                            "max_output_tokens": LLM_MAX_TOKENS,
+                        }
+                    )
+                    break
+
+                except errors.ServerError as e:
+                    status_code = getattr(e, "code", None)
+
+                    if status_code not in (500, 502, 503, 504):
+                        raise
+
+                    if attempt == max_attempts - 1:
+                        logger.error(
+                            f"[LLM] Gemini unavailable after {max_attempts} attempts: {e}"
+                        )
+                        raise
+
+                    delay = 2 ** attempt
+                    logger.warning(
+                        f"[LLM] Gemini HTTP {status_code}; "
+                        f"retrying in {delay}s "
+                        f"(attempt {attempt + 1}/{max_attempts})"
+                    )
+                    time.sleep(delay)
 
             ai_text = response.text.strip() if response.text else ""
             if not ai_text:
