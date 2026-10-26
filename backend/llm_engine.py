@@ -27,8 +27,10 @@ noticeably better quality at higher cost, `gemini-3.5-flash`.
 import os
 import time
 import threading
+import httpx
 from typing import Optional, Dict
 from google import genai
+from groq import Groq
 from config import (
     SESSION_TTL_SECONDS, SESSION_CLEANUP_INTERVAL,
     LLM_MODEL, LLM_MAX_TOKENS, LLM_TEMPERATURE,
@@ -118,6 +120,8 @@ Current question from user:
 
 Your fresh {lang_name} response:"""
 
+class EmptyLLMResponseError(Exception):
+    """Raised when an LLM returns an empty response."""
 
 class LLMEngine:
     def __init__(self):
@@ -126,7 +130,22 @@ class LLMEngine:
             logger.error("[LLM] GEMINI_API_KEY not set!")
             raise ValueError("GEMINI_API_KEY environment variable required")
 
-        self.client = genai.Client(api_key=api_key)
+        self.client = genai.Client(
+            api_key=api_key,
+            http_options=genai.types.HttpOptions(
+                timeout=10000,
+                retry_options=genai.types.HttpRetryOptions(
+                    attempts=1
+                    ),
+                ),
+            )
+        groq_api_key = os.getenv("GROQ_API_KEY")
+        self.groq_client = (
+            Groq(api_key=groq_api_key, timeout=15.0, max_retries=0)
+            if groq_api_key
+            else None
+        )
+        self.groq_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
         self.sessions: Dict[str, ConversationMemory] = {}
         self._lock = threading.RLock()
         self._start_cleanup_thread()
@@ -164,65 +183,132 @@ class LLMEngine:
                     logger.error(f"[LLM] Cleanup thread error: {e}", exc_info=True)
         threading.Thread(target=cleanup_loop, daemon=True).start()
 
+    def _generate_with_groq(self, prompt: str) -> str:
+        """Generate a response using Groq as the fallback provider."""
+
+        if self.groq_client is None:
+            raise RuntimeError("Groq fallback is not configured")
+
+        logger.info("[LLM] Switching to Groq fallback")
+
+        response = self.groq_client.chat.completions.create(
+            model=self.groq_model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            temperature=LLM_TEMPERATURE,
+            max_completion_tokens=LLM_MAX_TOKENS,
+        )
+
+        ai_text = response.choices[0].message.content
+
+        if not ai_text or not ai_text.strip():
+            raise RuntimeError("Groq returned an empty response")
+
+        return ai_text.strip()
+
     @log_function_call
     def generate(self, user_text: str, target_lang: str, session_id: str = "default") -> dict:
         set_context(session_id=session_id, target_lang=target_lang)
+
         try:
             t_start = time.time()
+
             memory = self._get_memory(session_id)
             prompt = _build_prompt(user_text, target_lang, memory.buffer)
 
-            max_attempts = 3
+            ai_text = ""
+            provider = "gemini"
 
-            for attempt in range(max_attempts):
-                try:
-                    response = self.client.models.generate_content(
-                        model=LLM_MODEL,
-                        contents=prompt,
-                        config={
-                            "temperature": LLM_TEMPERATURE,
-                            "max_output_tokens": LLM_MAX_TOKENS,
-                        }
-                    )
-                    break
+            try:
+                max_attempts = 2
 
-                except errors.ServerError as e:
+                for attempt in range(max_attempts):
+                    try:
+                        response = self.client.models.generate_content(
+                            model=LLM_MODEL,
+                            contents=prompt,
+                            config={
+                                "temperature": LLM_TEMPERATURE,
+                                "max_output_tokens": LLM_MAX_TOKENS,
+                            },
+                        )
+
+                        ai_text = (
+                            response.text.strip()
+                            if response.text
+                            else ""
+                        )
+
+                        if not ai_text:
+                            raise EmptyLLMResponseError("Gemini returned an empty response")
+                        break
+
+                    except errors.ServerError as e:
+                        status_code = getattr(e, "code", None)
+
+                        if status_code not in (500, 502, 503, 504):
+                            raise
+
+                        if attempt == max_attempts - 1:
+                            raise
+
+                        logger.warning(
+                            f"[LLM] Gemini HTTP {status_code}; retrying once"
+                        )
+                        time.sleep(1)
+
+            except ( errors.APIError,
+                    TimeoutError,
+                    ConnectionError,
+                    httpx.TimeoutException,
+                    httpx.ConnectError,
+                    EmptyLLMResponseError,
+                ) as e:
+                if isinstance(e, errors.APIError):
                     status_code = getattr(e, "code", None)
 
-                    if status_code not in (500, 502, 503, 504):
+                    if status_code not in (429, 500, 502, 503, 504):
                         raise
+                logger.warning(
+                    f"[LLM] Gemini unavailable; switching to Groq: {type(e).__name__}"
+                )
 
-                    if attempt == max_attempts - 1:
-                        logger.error(
-                            f"[LLM] Gemini unavailable after {max_attempts} attempts: {e}"
-                        )
-                        raise
+                if self.groq_client is None:
+                    raise RuntimeError(
+                        "Gemini failed and Groq fallback is not configured"
+                    ) from e
 
-                    delay = 2 ** attempt
-                    logger.warning(
-                        f"[LLM] Gemini HTTP {status_code}; "
-                        f"retrying in {delay}s "
-                        f"(attempt {attempt + 1}/{max_attempts})"
-                    )
-                    time.sleep(delay)
+                ai_text = self._generate_with_groq(prompt)
+                provider = "groq"
 
-            ai_text = response.text.strip() if response.text else ""
-            if not ai_text:
-                logger.warning(f"[LLM] Empty response from Gemini for session {session_id}")
-                ai_text = "Sorry, I couldn't generate a response."
+            memory.save_context(
+                {"input": user_text},
+                {"output": ai_text},
+            )
 
-            memory.save_context({"input": user_text}, {"output": ai_text})
             latency_ms = int((time.time() - t_start) * 1000)
-            logger.info(f"[LLM] Generated response in {latency_ms}ms: '{ai_text[:40]}'")
+
+            logger.info(
+                f"[LLM] Provider={provider}; latency={latency_ms}ms"
+            )
 
             return {
                 "text": ai_text,
                 "latency_ms": latency_ms,
                 "language": target_lang,
-                "tokens_used": len(ai_text.split())
+                "tokens_used": len(ai_text.split()),
+                "provider": provider,
             }
+
         except Exception as e:
-            logger.error(f"[LLM] Generation failed: {e}", exc_info=True)
+            logger.error(
+                f"[LLM] Generation failed: {e}",
+                exc_info=True,
+            )
             raise
 
     async def generate_stream(self, user_text: str, target_lang: str, session_id: str = "default"):

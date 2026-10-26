@@ -45,10 +45,10 @@ SPEAKER_PROFILES = ["aastha", "guest"]
 # FIX: gemini-2.5-flash started returning 404 "no longer available to new
 # users" — Google has restricted it for new API keys ahead of its full
 # shutdown later this year (confirmed via Google's own deprecation docs,
-# July 2026). gemini-3.1-flash-lite is the current direct cost/latency
+# July 2026). gemini-3.5-flash-lite is the current direct cost/latency
 # equivalent replacement. If you want noticeably smarter answers and don't
 # mind higher cost/latency, gemini-3.5-flash is the step up (also GA).
-LLM_MODEL = os.getenv("LLM_MODEL", "gemini-3.1-flash-lite")
+LLM_MODEL = os.getenv("LLM_MODEL", "gemini-3.5-flash-lite")
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "512"))
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.4"))
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "30"))

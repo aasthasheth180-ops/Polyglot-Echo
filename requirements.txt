@@ -22,6 +22,8 @@ openai-whisper
 google-genai
 langchain-community
 supabase
+groq
+httpx
 
 # FIX: models.py imports these directly but neither was ever declared here —
 # `import models` would crash immediately without them, which now matters
